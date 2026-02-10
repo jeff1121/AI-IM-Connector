@@ -1,0 +1,14 @@
+**/.dockerignore
+**/.git
+**/.vs
+**/.vscode
+**/.idea
+**/bin
+**/obj
+**/out
+**/node_modules
+**/.DS_Store
+*.md
+!README.md
+tests/
+*.sln.DotSettings*

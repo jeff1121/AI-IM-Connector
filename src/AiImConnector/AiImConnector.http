@@ -1,0 +1,6 @@
+@AiImConnector_HostAddress = http://localhost:5018
+
+GET {{AiImConnector_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

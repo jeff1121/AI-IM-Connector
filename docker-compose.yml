@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  ai-im-connector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-im-connector
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      # LINE 設定（請替換為實際值）
+      - Im__Line__ChannelAccessToken=${LINE_CHANNEL_ACCESS_TOKEN}
+      - Im__Line__ChannelSecret=${LINE_CHANNEL_SECRET}
+      # Telegram 設定（請替換為實際值）
+      - Im__Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
+      - Im__Telegram__SecretToken=${TELEGRAM_SECRET_TOKEN}
+      # ACP 設定
+      - Acp__DefaultServerUrl=${ACP_DEFAULT_SERVER_URL:-http://host.docker.internal:8080}
+      # Agent 綁定
+      - AgentBindings__Bindings__Line__AgentName=${LINE_AGENT_NAME:-copilot-cli}
+      - AgentBindings__Bindings__Line__AcpServerUrl=${LINE_ACP_SERVER_URL:-http://host.docker.internal:8080}
+      - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME:-gemini-cli}
+      - AgentBindings__Bindings__Telegram__AcpServerUrl=${TELEGRAM_ACP_SERVER_URL:-http://host.docker.internal:8081}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
