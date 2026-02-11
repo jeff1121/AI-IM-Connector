@@ -1,7 +1,7 @@
 namespace AiImConnector.Models;
 
 /// <summary>
-/// 對話上下文 — 維持使用者與 AI 的對話歷史
+/// 對話上下文 — 維持使用者與 AI 的對話歷史（由 Copilot SDK 管理）
 /// </summary>
 public class SessionContext
 {
@@ -13,12 +13,6 @@ public class SessionContext
 
     /// <summary>使用者識別碼</summary>
     public string UserId { get; set; } = string.Empty;
-
-    /// <summary>對應的 ACP Session ID</summary>
-    public string? AcpSessionId { get; set; }
-
-    /// <summary>對話歷史紀錄</summary>
-    public List<ConversationEntry> History { get; set; } = new();
 
     /// <summary>建立時間</summary>
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

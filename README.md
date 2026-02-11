@@ -7,10 +7,10 @@
 ## 🏗️ 系統架構
 
 ```
-┌─────────────┐    Webhook     ┌──────────────────────────┐     ACP (HTTP+SSE)     ┌─────────────────┐
-│   LINE      │───────────────▶│                          │────────────────────────▶│ Copilot CLI     │
-│   Telegram  │◀───────────────│   AI IM Connector        │◀────────────────────────│ Codex CLI       │
-│   (其他 IM) │    Reply API   │   (.NET 8 WebAPI)        │     JSON-RPC 2.0       │ Gemini CLI      │
+┌─────────────┐    Webhook     ┌──────────────────────────┐     ACP (stdio)        ┌─────────────────┐
+│   LINE      │───────────────▶│                          │────────────────────────▶│                 │
+│   Telegram  │◀───────────────│   AI IM Connector        │◀────────────────────────│  Copilot CLI    │
+│   (其他 IM) │    Reply API   │   (.NET 8 WebAPI)        │  GitHub.Copilot.SDK    │  (子行程)       │
 └─────────────┘                │                          │                        └─────────────────┘
                                └──────────────────────────┘
 ```
@@ -19,9 +19,9 @@
 
 - **多平台支援**：LINE、Telegram（Teams、Google Chat、Slack 後續擴充）
 - **多媒體訊息**：圖片、影片、音訊、檔案
-- **ACP 協定**：透過 Agent Client Protocol 連接 AI Agent
-- **對話上下文**：維持 Session，AI 記住先前的對話內容
-- **Agent 綁定**：設定檔配置每個 IM 平台對應的 Agent
+- **GitHub Copilot SDK**：透過 `GitHub.Copilot.SDK` 啟動 Copilot CLI 子行程，以 ACP 協定通訊
+- **對話上下文**：SDK 原生 Session 管理，支援對話持久化與恢復
+- **Agent 綁定**：設定檔配置每個 IM 平台對應的模型
 - **指令系統**：`/clear`、`/help`、`/status`
 - **Docker 部署**：容器化建置與部署
 
@@ -29,9 +29,10 @@
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - [Docker](https://docs.docker.com/get-docker/)（部署用）
+- [GitHub Copilot CLI](https://docs.github.com/en/copilot)（SDK 會自動下載，或可手動指定路徑）
+- GitHub Token（具有 Copilot 權限）
 - LINE Channel Access Token & Channel Secret
 - Telegram Bot Token
-- ACP Server（Copilot CLI / Codex CLI / Gemini CLI）
 
 ## 🚀 快速開始
 
@@ -47,6 +48,7 @@ cd src/AiImConnector
 dotnet user-secrets set "Im:Line:ChannelAccessToken" "YOUR_TOKEN"
 dotnet user-secrets set "Im:Line:ChannelSecret" "YOUR_SECRET"
 dotnet user-secrets set "Im:Telegram:BotToken" "YOUR_BOT_TOKEN"
+dotnet user-secrets set "Acp:GithubToken" "YOUR_GITHUB_TOKEN"
 
 # 3. 啟動
 dotnet run
@@ -87,19 +89,21 @@ docker compose logs -f
     }
   },
   "Acp": {
-    "DefaultServerUrl": "http://localhost:8080",
-    "ConnectionTimeoutSeconds": 30,
-    "StreamTimeoutSeconds": 120
+    "CliPath": "",
+    "GithubToken": "",
+    "ResponseTimeoutSeconds": 120
   },
   "AgentBindings": {
     "Bindings": {
       "Line": {
         "AgentName": "copilot-cli",
-        "AcpServerUrl": "http://localhost:8080"
+        "Model": "gpt-4o",
+        "ResponseTimeoutSeconds": 120
       },
       "Telegram": {
-        "AgentName": "gemini-cli",
-        "AcpServerUrl": "http://localhost:8081"
+        "AgentName": "copilot-cli",
+        "Model": "claude-sonnet-4",
+        "ResponseTimeoutSeconds": 120
       }
     }
   }
@@ -116,9 +120,11 @@ docker compose logs -f
 | `Im__Line__ChannelSecret` | LINE Channel Secret |
 | `Im__Telegram__BotToken` | Telegram Bot Token |
 | `Im__Telegram__SecretToken` | Telegram Webhook Secret Token |
-| `Acp__DefaultServerUrl` | ACP Server 預設 URL |
-| `AgentBindings__Bindings__Line__AgentName` | LINE 綁定的 Agent 名稱 |
-| `AgentBindings__Bindings__Line__AcpServerUrl` | LINE 綁定的 ACP Server URL |
+| `Acp__CliPath` | Copilot CLI 路徑（留空則使用 SDK 內建） |
+| `Acp__GithubToken` | GitHub Token（需有 Copilot 權限） |
+| `Acp__ResponseTimeoutSeconds` | AI 回應逾時秒數 |
+| `AgentBindings__Bindings__Line__Model` | LINE 綁定的 AI 模型 |
+| `AgentBindings__Bindings__Telegram__Model` | Telegram 綁定的 AI 模型 |
 
 ## 🔌 Webhook 端點
 
@@ -132,10 +138,9 @@ docker compose logs -f
 
 ```
 src/AiImConnector/
-├── Models/           # 資料模型（UnifiedMessage、MediaContent、ACP 訊息）
+├── Models/           # 資料模型（UnifiedMessage、MediaContent）
 ├── Services/         # 核心服務
-│   ├── Acp/          # ACP 客戶端（HTTP+SSE）
-│   ├── Session/      # 對話管理（InMemory）
+│   ├── Acp/          # Copilot SDK 封裝（CopilotClientService、CopilotSessionManager）
 │   └── Media/        # 多媒體處理
 ├── Adapters/         # IM 平台適配器
 │   ├── Line/         # LINE 適配器

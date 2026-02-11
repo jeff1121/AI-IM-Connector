@@ -1,169 +1,142 @@
-using System.Net.Http.Json;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
 using AiImConnector.Configuration;
-using AiImConnector.Models;
+using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// ACP 客戶端實作 — 透過 HTTP + SSE 與 ACP Server 通訊
+/// Copilot SDK 客戶端實作 — 透過 Copilot SDK 啟動本機 Copilot CLI 並以 ACP 協定通訊
 /// </summary>
-public class AcpClient : IAcpClient
+public class CopilotClientService : ICopilotClientService
 {
-    private readonly HttpClient _httpClient;
+    private readonly CopilotClient _client;
     private readonly AcpSettings _settings;
-    private readonly ILogger<AcpClient> _logger;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
+    private readonly ILogger<CopilotClientService> _logger;
+    private bool _started;
 
-    public AcpClient(HttpClient httpClient, IOptions<AcpSettings> settings, ILogger<AcpClient> logger)
+    public CopilotClientService(IOptions<AcpSettings> settings, ILogger<CopilotClientService> logger)
     {
-        _httpClient = httpClient;
         _settings = settings.Value;
         _logger = logger;
-        _httpClient.Timeout = TimeSpan.FromSeconds(_settings.ConnectionTimeoutSeconds);
-    }
 
-    /// <inheritdoc />
-    public async Task<AcpResponse> InitializeAsync(string serverUrl, CancellationToken cancellationToken = default)
-    {
-        var request = new AcpRequest
+        var options = new CopilotClientOptions
         {
-            Method = "session/initialize",
-            Params = new AcpInitializeParams()
+            AutoStart = false,
+            AutoRestart = true
         };
 
-        _logger.LogInformation("正在初始化 ACP 連線：{ServerUrl}", serverUrl);
-        return await SendRequestAsync(serverUrl, request, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<AcpResponse> CreateSessionAsync(string serverUrl, CancellationToken cancellationToken = default)
-    {
-        var request = new AcpRequest
+        // 若有指定 CLI 路徑，則設定
+        if (!string.IsNullOrEmpty(_settings.CliPath))
         {
-            Method = "session/new"
-        };
-
-        _logger.LogInformation("正在建立新的 ACP Session：{ServerUrl}", serverUrl);
-        return await SendRequestAsync(serverUrl, request, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<string> SendPromptAsync(string serverUrl, AcpPromptParams promptParams, CancellationToken cancellationToken = default)
-    {
-        var request = new AcpRequest
-        {
-            Method = "session/prompt",
-            Params = promptParams
-        };
-
-        _logger.LogDebug("發送 Prompt 到 ACP Server：{ServerUrl}，SessionId：{SessionId}", serverUrl, promptParams.SessionId);
-        var response = await SendRequestAsync(serverUrl, request, cancellationToken);
-
-        if (!response.IsSuccess)
-        {
-            _logger.LogError("ACP Prompt 失敗：{ErrorCode} {ErrorMessage}", response.Error?.Code, response.Error?.Message);
-            throw new InvalidOperationException($"ACP 錯誤：{response.Error?.Message}");
+            options.CliPath = _settings.CliPath;
         }
 
-        return response.Result?.Content ?? string.Empty;
+        _client = new CopilotClient(options);
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<AcpStreamEvent> SendPromptStreamAsync(
-        string serverUrl,
-        AcpPromptParams promptParams,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        var request = new AcpRequest
+        if (_started) return;
+
+        _logger.LogInformation("正在啟動 Copilot CLI...");
+        await _client.StartAsync(cancellationToken);
+        _started = true;
+        _logger.LogInformation("Copilot CLI 啟動完成，連線狀態：{State}", _client.State);
+    }
+
+    /// <inheritdoc />
+    public async Task StopAsync()
+    {
+        if (!_started) return;
+
+        _logger.LogInformation("正在停止 Copilot CLI...");
+        await _client.StopAsync();
+        _started = false;
+        _logger.LogInformation("Copilot CLI 已停止");
+    }
+
+    /// <inheritdoc />
+    public async Task<CopilotSession> CreateSessionAsync(string sessionId, string model, CancellationToken cancellationToken = default)
+    {
+        await EnsureStartedAsync(cancellationToken);
+
+        var config = new SessionConfig
         {
-            Method = "session/prompt",
-            Params = promptParams
+            SessionId = sessionId,
+            Model = model
         };
 
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{serverUrl.TrimEnd('/')}/rpc")
+        _logger.LogInformation("建立 Copilot Session：{SessionId}，模型：{Model}", sessionId, model);
+        var session = await _client.CreateSessionAsync(config, cancellationToken);
+        return session;
+    }
+
+    /// <inheritdoc />
+    public async Task<CopilotSession?> ResumeSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureStartedAsync(cancellationToken);
+
+        try
         {
-            Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
-        };
-        httpRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        _logger.LogDebug("發送串流 Prompt 到 ACP Server：{ServerUrl}", serverUrl);
-
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-
-        string? eventType = null;
-        var dataBuilder = new StringBuilder();
-
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+            _logger.LogInformation("恢復 Copilot Session：{SessionId}", sessionId);
+            var session = await _client.ResumeSessionAsync(sessionId, cancellationToken: cancellationToken);
+            return session;
+        }
+        catch (Exception ex)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (line == null) break;
-
-            if (line.StartsWith("event:"))
-            {
-                eventType = line[6..].Trim();
-            }
-            else if (line.StartsWith("data:"))
-            {
-                dataBuilder.Append(line[5..].Trim());
-            }
-            else if (string.IsNullOrEmpty(line))
-            {
-                // 空行表示事件結束
-                if (eventType != null || dataBuilder.Length > 0)
-                {
-                    yield return new AcpStreamEvent
-                    {
-                        EventType = eventType ?? "message",
-                        Data = dataBuilder.ToString()
-                    };
-                    eventType = null;
-                    dataBuilder.Clear();
-                }
-            }
+            _logger.LogWarning(ex, "恢復 Session 失敗（可能不存在）：{SessionId}", sessionId);
+            return null;
         }
     }
 
     /// <inheritdoc />
-    public async Task CancelAsync(string serverUrl, string sessionId, CancellationToken cancellationToken = default)
+    public async Task<string> SendAndWaitAsync(CopilotSession session, string prompt, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        var request = new AcpRequest
-        {
-            Method = "session/cancel",
-            Params = new { sessionId }
-        };
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(_settings.ResponseTimeoutSeconds);
 
-        _logger.LogInformation("取消 ACP Session：{SessionId}", sessionId);
-        await SendRequestAsync(serverUrl, request, cancellationToken);
-    }
+        _logger.LogDebug("發送訊息到 Session {SessionId}：{Prompt}", session.SessionId, prompt.Length > 100 ? prompt[..100] + "..." : prompt);
 
-    /// <summary>發送 JSON-RPC 請求到 ACP Server</summary>
-    private async Task<AcpResponse> SendRequestAsync(string serverUrl, AcpRequest request, CancellationToken cancellationToken)
-    {
-        var url = $"{serverUrl.TrimEnd('/')}/rpc";
-        var jsonContent = JsonSerializer.Serialize(request, JsonOptions);
-
-        using var httpResponse = await _httpClient.PostAsync(
-            url,
-            new StringContent(jsonContent, Encoding.UTF8, "application/json"),
+        var response = await session.SendAndWaitAsync(
+            new MessageOptions { Prompt = prompt },
+            effectiveTimeout,
             cancellationToken);
 
-        httpResponse.EnsureSuccessStatusCode();
+        var content = response?.Data?.Content ?? string.Empty;
+        _logger.LogDebug("收到回應（{Length} 字元）", content.Length);
+        return content;
+    }
 
-        var response = await httpResponse.Content.ReadFromJsonAsync<AcpResponse>(JsonOptions, cancellationToken);
-        return response ?? new AcpResponse { Error = new AcpError { Code = -1, Message = "無法解析 ACP 回應" } };
+    /// <inheritdoc />
+    public async Task DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureStartedAsync(cancellationToken);
+        await _client.DeleteSessionAsync(sessionId, cancellationToken);
+        _logger.LogInformation("已刪除 Session：{SessionId}", sessionId);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SessionMetadata>> ListSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureStartedAsync(cancellationToken);
+        return await _client.ListSessionsAsync(cancellationToken);
+    }
+
+    /// <summary>確保 Copilot CLI 已啟動</summary>
+    private async Task EnsureStartedAsync(CancellationToken cancellationToken)
+    {
+        if (!_started)
+        {
+            await StartAsync(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync();
+        _client.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

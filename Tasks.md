@@ -8,8 +8,9 @@
 |------|------|------|------|
 | 第一階段 | 專案基礎建設 | ✅ 完成 | 4/4 |
 | 第二階段 | 核心資料模型 | ✅ 完成 | 4/4 |
-| 第三階段 | ACP 客戶端 | ✅ 完成 | 3/3 |
-| 第四階段 | 對話管理 | ✅ 完成 | 3/3 |
+| 第三階段 | ACP 客戶端（初版 HTTP+SSE） | ✅ 完成 | 3/3 |
+| 第三階段-R | 重構為 Copilot SDK | ✅ 完成 | 8/8 |
+| 第四階段 | 對話管理（已整合至 SDK） | ✅ 完成 | — |
 | 第五階段 | 多媒體處理 | ✅ 完成 | 2/2 |
 | 第六階段 | LINE 適配器 | ✅ 完成 | 4/4 |
 | 第七階段 | Telegram 適配器 | ✅ 完成 | 3/3 |
@@ -39,22 +40,27 @@
 - [x] **2.3** 定義 `SessionContext` 對話上下文模型
 - [x] **2.4** 定義 ACP JSON-RPC 2.0 訊息模型
 
-## 第三階段：ACP 客戶端
+## 第三階段：ACP 客戶端（初版 HTTP+SSE，已被 SDK 取代）
 
-- [x] **3.1** 定義 `IAcpClient` 介面（初始化、發送提示、接收回應、取消）
-- [x] **3.2** 實作 `AcpClient`（HTTP 請求 + SSE 串流接收回應）
-  - `session/initialize` — 初始化連線
-  - `session/new` — 建立新對話
-  - `session/prompt` — 發送使用者訊息
-  - `session/update` — 接收 AI 回應（SSE 串流）
-  - `session/cancel` — 取消處理
-- [x] **3.3** 實作 `AcpSessionManager`（管理與 ACP Server 的 Session 生命週期）
+- [x] ~~**3.1** 定義 `IAcpClient` 介面~~
+- [x] ~~**3.2** 實作 `AcpClient`（HTTP+SSE）~~
+- [x] ~~**3.3** 實作 `AcpSessionManager`~~
 
-## 第四階段：對話管理
+## 第三階段-R：重構為 GitHub Copilot SDK
 
-- [x] **4.1** 定義 `ISessionStore` 介面
-- [x] **4.2** 實作 `InMemorySessionStore`（使用 ConcurrentDictionary）
-- [x] **4.3** 實作 `SessionService`（建立/取得/清除 Session、逾時自動清理）
+- [x] **3R.1** 安裝 `GitHub.Copilot.SDK` NuGet 套件 (v0.1.23)
+- [x] **3R.2** 研究 SDK API（CopilotClient、CopilotSession、SessionConfig、MessageOptions）
+- [x] **3R.3** 重寫 `ICopilotClientService` 介面（取代 IAcpClient）
+- [x] **3R.4** 實作 `CopilotClientService`（封裝 CopilotClient，管理生命週期）
+- [x] **3R.5** 實作 `CopilotSessionManager`（SDK 原生 Session 管理 + 對話持久化）
+- [x] **3R.6** 更新 Configuration 模型（CliPath、GithubToken、Model）
+- [x] **3R.7** 更新 `MessageRouter`（使用 CopilotSessionManager，多媒體描述整合至 prompt）
+- [x] **3R.8** 更新 `Program.cs` DI 註冊 + `CopilotLifecycleService` 背景服務
+
+## 第四階段：對話管理（已整合至 Copilot SDK）
+
+> 原 ISessionStore / InMemorySessionStore / SessionService 已移除，
+> 對話管理由 Copilot SDK 原生 Session 功能處理（支援 persist / resume）。
 
 ## 第五階段：多媒體處理
 
@@ -100,8 +106,8 @@
 ## 第十一階段：文件與測試
 
 - [x] **11.1** 撰寫 README.md（含架構圖、設定說明、部署指南、指令說明）
-- [x] **11.2** 撰寫單元測試（30 個測試全部通過）
-  - SessionService 測試（5 個）
+- [x] **11.2** 撰寫單元測試（29 個測試全部通過）
+  - CopilotSessionManager 測試（4 個）
   - MediaHandler 測試（11 個）
   - UnifiedMessage 測試（6 個）
   - LINE MessageConverter 測試（4 個）
@@ -127,7 +133,7 @@
 | 技術 | 說明 |
 |------|------|
 | .NET 8 | WebAPI 框架 |
-| ACP (HTTP+SSE) | Agent Client Protocol，JSON-RPC 2.0 |
+| GitHub.Copilot.SDK | Copilot CLI 封裝，ACP (stdio) 通訊 |
 | LineBotSDK | LINE Messaging API |
 | Telegram.Bot | Telegram Bot API |
 | Docker | 多階段建置容器化部署 |
@@ -143,9 +149,7 @@
 | 2.1 統一訊息 | `Models/UnifiedMessage.cs` |
 | 2.2 多媒體模型 | `Models/MediaContent.cs` |
 | 2.3 對話上下文 | `Models/SessionContext.cs` |
-| 2.4 ACP 訊息 | `Models/AcpMessages.cs` |
-| 3.1-3.3 ACP 客戶端 | `Services/Acp/IAcpClient.cs`, `AcpClient.cs`, `AcpSessionManager.cs` |
-| 4.1-4.3 Session 管理 | `Services/Session/ISessionStore.cs`, `InMemorySessionStore.cs`, `SessionService.cs` |
+| 3R Copilot SDK | `Services/Acp/IAcpClient.cs` (ICopilotClientService), `AcpClient.cs` (CopilotClientService), `AcpSessionManager.cs` (CopilotSessionManager) |
 | 5.1-5.2 多媒體處理 | `Services/Media/IMediaHandler.cs`, `MediaHandler.cs` |
 | 6.1-6.4 LINE 適配器 | `Adapters/Line/LineAdapter.cs`, `LineWebhookController.cs`, `LineMessageConverter.cs` |
 | 7.1-7.3 Telegram 適配器 | `Adapters/Telegram/TelegramAdapter.cs`, `TelegramWebhookController.cs`, `TelegramMessageConverter.cs` |

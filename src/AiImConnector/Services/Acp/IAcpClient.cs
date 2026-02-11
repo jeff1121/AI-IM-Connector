@@ -1,41 +1,40 @@
-using AiImConnector.Models;
+using GitHub.Copilot.SDK;
 
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// ACP 客戶端介面 — 定義與 ACP Server 通訊的操作
+/// Copilot SDK 客戶端介面 — 封裝 CopilotClient 的操作
 /// </summary>
-public interface IAcpClient
+public interface ICopilotClientService : IAsyncDisposable
 {
-    /// <summary>初始化與 ACP Server 的連線</summary>
-    /// <param name="serverUrl">ACP Server URL</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>初始化回應（含 Agent 能力宣告）</returns>
-    Task<AcpResponse> InitializeAsync(string serverUrl, CancellationToken cancellationToken = default);
+    /// <summary>啟動 Copilot CLI 程序</summary>
+    Task StartAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>建立新的 ACP Session</summary>
-    /// <param name="serverUrl">ACP Server URL</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>含 SessionId 的回應</returns>
-    Task<AcpResponse> CreateSessionAsync(string serverUrl, CancellationToken cancellationToken = default);
+    /// <summary>停止 Copilot CLI 程序</summary>
+    Task StopAsync();
 
-    /// <summary>發送使用者訊息並取得 AI 回應</summary>
-    /// <param name="serverUrl">ACP Server URL</param>
-    /// <param name="promptParams">Prompt 參數（含上下文與附件）</param>
+    /// <summary>建立新的 Session</summary>
+    /// <param name="sessionId">自訂 Session ID（格式：{平台}:{使用者ID}）</param>
+    /// <param name="model">AI 模型名稱（例如 gpt-5、claude-sonnet-4.5）</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    Task<CopilotSession> CreateSessionAsync(string sessionId, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>恢復已存在的 Session</summary>
+    /// <param name="sessionId">Session ID</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    Task<CopilotSession?> ResumeSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>發送訊息並等待完整回應</summary>
+    /// <param name="session">Copilot Session</param>
+    /// <param name="prompt">使用者訊息</param>
+    /// <param name="timeout">逾時時間</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>AI 回應文字</returns>
-    Task<string> SendPromptAsync(string serverUrl, AcpPromptParams promptParams, CancellationToken cancellationToken = default);
+    Task<string> SendAndWaitAsync(CopilotSession session, string prompt, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
 
-    /// <summary>發送使用者訊息並以串流方式接收回應</summary>
-    /// <param name="serverUrl">ACP Server URL</param>
-    /// <param name="promptParams">Prompt 參數</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>串流回應的非同步列舉</returns>
-    IAsyncEnumerable<AcpStreamEvent> SendPromptStreamAsync(string serverUrl, AcpPromptParams promptParams, CancellationToken cancellationToken = default);
+    /// <summary>刪除 Session</summary>
+    Task DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default);
 
-    /// <summary>取消正在進行的請求</summary>
-    /// <param name="serverUrl">ACP Server URL</param>
-    /// <param name="sessionId">ACP Session ID</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    Task CancelAsync(string serverUrl, string sessionId, CancellationToken cancellationToken = default);
+    /// <summary>列出所有 Session</summary>
+    Task<IReadOnlyList<SessionMetadata>> ListSessionsAsync(CancellationToken cancellationToken = default);
 }

@@ -16,13 +16,15 @@ services:
       # Telegram 設定（請替換為實際值）
       - Im__Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
       - Im__Telegram__SecretToken=${TELEGRAM_SECRET_TOKEN}
-      # ACP 設定
-      - Acp__DefaultServerUrl=${ACP_DEFAULT_SERVER_URL:-http://host.docker.internal:8080}
+      # Copilot SDK 設定
+      - Acp__CliPath=${COPILOT_CLI_PATH:-}
+      - Acp__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT:-120}
       # Agent 綁定
       - AgentBindings__Bindings__Line__AgentName=${LINE_AGENT_NAME:-copilot-cli}
-      - AgentBindings__Bindings__Line__AcpServerUrl=${LINE_ACP_SERVER_URL:-http://host.docker.internal:8080}
+      - AgentBindings__Bindings__Line__Model=${LINE_MODEL:-gpt-5}
       - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME:-gemini-cli}
-      - AgentBindings__Bindings__Telegram__AcpServerUrl=${TELEGRAM_ACP_SERVER_URL:-http://host.docker.internal:8081}
+      - AgentBindings__Bindings__Telegram__Model=${TELEGRAM_MODEL:-claude-sonnet-4.5}
+    volumes:
+      # 掛載 Copilot CLI（容器內需要存取主機的 CLI）
+      - ${COPILOT_CLI_DIR:-/usr/local/bin}:/usr/local/copilot:ro
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"

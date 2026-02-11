@@ -5,7 +5,6 @@ using AiImConnector.Middleware;
 using AiImConnector.Services;
 using AiImConnector.Services.Acp;
 using AiImConnector.Services.Media;
-using AiImConnector.Services.Session;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,11 +14,9 @@ builder.Services.Configure<TelegramSettings>(builder.Configuration.GetSection(Te
 builder.Services.Configure<AcpSettings>(builder.Configuration.GetSection(AcpSettings.SectionName));
 builder.Services.Configure<AgentBindingSettings>(builder.Configuration.GetSection(AgentBindingSettings.SectionName));
 
-// === 核心服務註冊 ===
-builder.Services.AddSingleton<ISessionStore, InMemorySessionStore>();
-builder.Services.AddSingleton<SessionService>();
-builder.Services.AddHttpClient<IAcpClient, AcpClient>();
-builder.Services.AddSingleton<AcpSessionManager>();
+// === Copilot SDK 服務註冊 ===
+builder.Services.AddSingleton<ICopilotClientService, CopilotClientService>();
+builder.Services.AddSingleton<CopilotSessionManager>();
 builder.Services.AddHttpClient<IMediaHandler, MediaHandler>();
 builder.Services.AddSingleton<MessageRouter>();
 
@@ -32,8 +29,8 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// === Session 清理背景服務 ===
-builder.Services.AddHostedService<SessionCleanupService>();
+// === Copilot CLI 生命週期管理 ===
+builder.Services.AddHostedService<CopilotLifecycleService>();
 
 var app = builder.Build();
 
@@ -55,32 +52,41 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 app.Run();
 
 /// <summary>
-/// Session 定期清理背景服務
+/// Copilot CLI 生命週期管理背景服務 — 隨應用程式啟動/停止 Copilot CLI
 /// </summary>
-public class SessionCleanupService : BackgroundService
+public class CopilotLifecycleService : BackgroundService
 {
-    private readonly SessionService _sessionService;
-    private readonly ILogger<SessionCleanupService> _logger;
+    private readonly ICopilotClientService _clientService;
+    private readonly ILogger<CopilotLifecycleService> _logger;
 
-    public SessionCleanupService(SessionService sessionService, ILogger<SessionCleanupService> logger)
+    public CopilotLifecycleService(ICopilotClientService clientService, ILogger<CopilotLifecycleService> logger)
     {
-        _sessionService = sessionService;
+        _clientService = clientService;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
-            try
-            {
-                await _sessionService.CleanupExpiredAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Session 清理失敗");
-            }
+            await _clientService.StartAsync(stoppingToken);
+            _logger.LogInformation("Copilot CLI 背景服務已啟動");
+
+            // 等待應用程式停止信號
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常停止
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Copilot CLI 背景服務發生錯誤");
+        }
+        finally
+        {
+            await _clientService.StopAsync();
+            _logger.LogInformation("Copilot CLI 背景服務已停止");
         }
     }
 }

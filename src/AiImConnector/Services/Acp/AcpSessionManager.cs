@@ -1,29 +1,29 @@
 using System.Collections.Concurrent;
 using AiImConnector.Configuration;
-using AiImConnector.Models;
+using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// ACP Session 管理器 — 管理每個使用者對應的 ACP Session 生命週期
+/// Copilot Session 管理器 — 管理每個使用者對應的 Copilot Session 生命週期
 /// </summary>
-public class AcpSessionManager
+public class CopilotSessionManager
 {
-    private readonly IAcpClient _acpClient;
+    private readonly ICopilotClientService _clientService;
     private readonly AgentBindingSettings _bindingSettings;
-    private readonly ILogger<AcpSessionManager> _logger;
+    private readonly ILogger<CopilotSessionManager> _logger;
 
-    /// <summary>已初始化的 ACP Server 記錄（避免重複初始化）</summary>
-    private readonly ConcurrentDictionary<string, bool> _initializedServers = new();
+    /// <summary>活躍的 Session 快取（SessionId → CopilotSession）</summary>
+    private readonly ConcurrentDictionary<string, CopilotSession> _sessions = new();
 
-    public AcpSessionManager(
-        IAcpClient acpClient,
+    public CopilotSessionManager(
+        ICopilotClientService clientService,
         IOptions<AgentBindingSettings> bindingSettings,
-        ILogger<AcpSessionManager> logger)
+        ILogger<CopilotSessionManager> logger)
     {
-        _acpClient = acpClient;
+        _clientService = clientService;
         _bindingSettings = bindingSettings.Value;
         _logger = logger;
     }
@@ -35,60 +35,77 @@ public class AcpSessionManager
         return binding;
     }
 
-    /// <summary>確保 ACP Server 已初始化</summary>
-    public async Task EnsureInitializedAsync(string serverUrl, CancellationToken cancellationToken = default)
+    /// <summary>取得或建立使用者的 Copilot Session</summary>
+    public async Task<CopilotSession> GetOrCreateSessionAsync(
+        string platform,
+        string userId,
+        CancellationToken cancellationToken = default)
     {
-        if (_initializedServers.TryGetValue(serverUrl, out _))
-            return;
+        var sessionId = BuildSessionId(platform, userId);
+
+        // 嘗試從快取取得
+        if (_sessions.TryGetValue(sessionId, out var existingSession))
+        {
+            return existingSession;
+        }
+
+        // 嘗試恢復先前的 Session
+        var resumed = await _clientService.ResumeSessionAsync(sessionId, cancellationToken);
+        if (resumed != null)
+        {
+            _sessions.TryAdd(sessionId, resumed);
+            _logger.LogInformation("恢復 Session 成功：{SessionId}", sessionId);
+            return resumed;
+        }
+
+        // 建立新的 Session
+        var binding = GetBinding(platform);
+        var model = binding?.Model ?? "gpt-5";
+
+        var session = await _clientService.CreateSessionAsync(sessionId, model, cancellationToken);
+        _sessions.TryAdd(sessionId, session);
+        _logger.LogInformation("建立新 Session：{SessionId}，模型：{Model}", sessionId, model);
+        return session;
+    }
+
+    /// <summary>發送訊息到 Copilot 並等待回應</summary>
+    public async Task<string> SendMessageAsync(
+        string platform,
+        string userId,
+        string prompt,
+        CancellationToken cancellationToken = default)
+    {
+        var session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
+        var binding = GetBinding(platform);
+        var timeout = binding != null
+            ? TimeSpan.FromSeconds(binding.ResponseTimeoutSeconds)
+            : TimeSpan.FromSeconds(120);
+
+        return await _clientService.SendAndWaitAsync(session, prompt, timeout, cancellationToken);
+    }
+
+    /// <summary>清除使用者的 Session</summary>
+    public async Task ClearSessionAsync(string platform, string userId, CancellationToken cancellationToken = default)
+    {
+        var sessionId = BuildSessionId(platform, userId);
+
+        if (_sessions.TryRemove(sessionId, out var session))
+        {
+            await session.DisposeAsync();
+        }
 
         try
         {
-            var response = await _acpClient.InitializeAsync(serverUrl, cancellationToken);
-            if (response.IsSuccess)
-            {
-                _initializedServers.TryAdd(serverUrl, true);
-                _logger.LogInformation("ACP Server 初始化成功：{ServerUrl}，能力：{Capabilities}",
-                    serverUrl, response.Result?.Capabilities);
-            }
-            else
-            {
-                _logger.LogWarning("ACP Server 初始化失敗：{ServerUrl}，錯誤：{Error}",
-                    serverUrl, response.Error?.Message);
-            }
+            await _clientService.DeleteSessionAsync(sessionId, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "ACP Server 初始化例外：{ServerUrl}", serverUrl);
-            throw;
-        }
-    }
-
-    /// <summary>建立新的 ACP Session</summary>
-    public async Task<string?> CreateSessionAsync(string serverUrl, CancellationToken cancellationToken = default)
-    {
-        await EnsureInitializedAsync(serverUrl, cancellationToken);
-
-        var response = await _acpClient.CreateSessionAsync(serverUrl, cancellationToken);
-        if (response.IsSuccess)
-        {
-            _logger.LogInformation("ACP Session 建立成功：{SessionId}", response.Result?.SessionId);
-            return response.Result?.SessionId;
+            _logger.LogWarning(ex, "刪除 Session 時發生例外：{SessionId}", sessionId);
         }
 
-        _logger.LogError("ACP Session 建立失敗：{Error}", response.Error?.Message);
-        return null;
+        _logger.LogInformation("已清除 Session：{SessionId}", sessionId);
     }
 
-    /// <summary>發送訊息到 ACP Agent 並取得回應</summary>
-    public async Task<string> SendMessageAsync(
-        string platform,
-        AcpPromptParams promptParams,
-        CancellationToken cancellationToken = default)
-    {
-        var binding = GetBinding(platform)
-            ?? throw new InvalidOperationException($"找不到平台 '{platform}' 的 Agent 綁定設定");
-
-        await EnsureInitializedAsync(binding.AcpServerUrl, cancellationToken);
-        return await _acpClient.SendPromptAsync(binding.AcpServerUrl, promptParams, cancellationToken);
-    }
+    /// <summary>產生 Session ID</summary>
+    public static string BuildSessionId(string platform, string userId) => $"{platform}:{userId}";
 }
