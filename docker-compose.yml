@@ -1,25 +1,10 @@
-version: '3.8'
+# =============================================================================
+# AI IM Connector — API 服務
+# 使用方式：docker compose up -d
+# 需先建立外部網路：docker network create public-web
+# =============================================================================
 
 services:
-  # === Caddy 反向代理（自動 HTTPS 憑證管理） ===
-  caddy:
-    image: caddy:2-alpine
-    container_name: ai-im-caddy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"   # HTTP/3
-    environment:
-      - DOMAIN=${DOMAIN}
-      - ACME_EMAIL=${ACME_EMAIL}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data      # 憑證持久化
-      - caddy_config:/config
-    depends_on:
-      - ai-im-connector
-    restart: unless-stopped
-
   # === API 服務 ===
   ai-im-connector:
     build:
@@ -47,8 +32,10 @@ services:
     extra_hosts:
       # 允許容器連線到主機（macOS/Windows Docker Desktop 預設支援 host.docker.internal）
       - "host.docker.internal:host-gateway"
+    networks:
+      - public-web
     restart: unless-stopped
 
-volumes:
-  caddy_data:
-  caddy_config:
+networks:
+  public-web:
+    external: true

@@ -1,0 +1,32 @@
+# =============================================================================
+# Caddy 反向代理 — 獨立部署
+# 使用方式：docker compose -f docker-compose.caddy.yml up -d
+# 需先建立外部網路：docker network create public-web
+# =============================================================================
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN}
+      - ACME_EMAIL=${ACME_EMAIL}
+    volumes:
+      - ${CADDYFILE_PATH:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # 憑證持久化
+      - caddy_config:/config
+    networks:
+      - public-web
+    restart: unless-stopped
+
+networks:
+  public-web:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:
