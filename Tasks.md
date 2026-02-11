@@ -39,15 +39,15 @@
 - [x] **2.2** 定義 `MediaContent` 多媒體內容模型（圖片/影片/音訊/檔案）
 - [x] **2.3** 定義 `SessionContext` 對話上下文模型
 
-## 第三階段：ACP 客戶端整合
+## 第三階段：Copilot SDK 整合
 
-- [x] **3.1** 安裝 `GitHub.Copilot.SDK` NuGet 套件 (v0.1.23)（歷史，已移除）
-- [x] **3.2** 研究 ACP 協定格式（JSON-RPC 2.0 over TCP）
-- [x] **3.3** 定義 `ICopilotClientService` 介面（啟動/停止、建立 Session、發送訊息）
-- [x] **3.4** 實作 `CopilotClientService`（持久 TCP 連線到 ACP Server，串流回應處理）
-- [x] **3.5** 實作 `CopilotSessionManager`（使用者 Session 快取 + ACP session/new）
-- [x] **3.6** 更新 Configuration 模型（ServerHost、ServerPort、ResponseTimeoutSeconds）
-- [x] **3.7** 實作 `CopilotLifecycleService`（BackgroundService，隨應用程式啟停 TCP 連線）
+- [x] **3.1** 安裝 `GitHub.Copilot.SDK` NuGet 套件 (v0.1.24-preview.0)
+- [x] **3.2** 研究 SDK API（CopilotClient、CopilotSession、SessionConfig、MessageOptions）
+- [x] **3.3** 定義 `ICopilotClientService` 介面（啟動/停止、建立 Session）
+- [x] **3.4** 實作 `CopilotClientService`（封裝 CopilotClient，CliUrl 連線外部 ACP Server）
+- [x] **3.5** 實作 `CopilotSessionManager`（使用者 Session 快取 + SDK CopilotSession）
+- [x] **3.6** 更新 Configuration 模型（CliUrl、CliPath、ResponseTimeoutSeconds）
+- [x] **3.7** 實作 `CopilotLifecycleService`（BackgroundService，隨應用程式啟停 SDK）
 - [x] **3.8** 註冊 DI 容器（ICopilotClientService → Singleton、CopilotSessionManager → Singleton）
 
 ## 第四階段：對話管理（由 Copilot SDK 原生處理）
@@ -126,8 +126,7 @@
 | 技術 | 版本 | 說明 |
 |------|------|------|
 | .NET | 8.0 | WebAPI 框架 |
-| GitHub.Copilot.SDK | — | 已移除，改用原生 TCP 連線 ACP Server |
-| ACP 協定 | JSON-RPC 2.0 | 透過 TCP 連線至 `copilot --acp --port 10080` |
+| GitHub.Copilot.SDK | 0.1.24-preview.0 | 官方 Copilot CLI SDK，ACP (JSON-RPC) 通訊 |
 | LineBotSDK | — | LINE Messaging API |
 | Telegram.Bot | — | Telegram Bot API |
 | Docker | — | 多階段建置容器化部署 |
@@ -164,4 +163,4 @@
 |------|------|
 | 2026-02-10 | 初始實作完成（11 個階段，30 測試通過） |
 | 2026-02-10 | 重構 ACP 層為 GitHub Copilot SDK，移除舊 HTTP+SSE 客戶端與自建 Session 管理 |
-| 2026-02-11 | 重構 ACP 客戶端為原生 TCP 連線（移除 Copilot SDK），端對端測試通過 |
+| 2026-02-11 | 重構為官方 Copilot SDK（CliUrl 連線外部 server），端對端測試通過 |
