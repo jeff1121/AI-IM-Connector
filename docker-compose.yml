@@ -1,13 +1,32 @@
 version: '3.8'
 
 services:
+  # === Caddy 反向代理（自動 HTTPS 憑證管理） ===
+  caddy:
+    image: caddy:2-alpine
+    container_name: ai-im-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN:-Ai-Assistant.jcome.uk}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # 憑證持久化
+      - caddy_config:/config
+    depends_on:
+      - ai-im-connector
+    restart: unless-stopped
+
+  # === API 服務 ===
   ai-im-connector:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: ai-im-connector
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       # LINE 設定（請替換為實際值）
@@ -16,7 +35,7 @@ services:
       # Telegram 設定（請替換為實際值）
       - Im__Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
       - Im__Telegram__SecretToken=${TELEGRAM_SECRET_TOKEN}
-      # ACP Server 連線設定（連線到主機上執行的 copilot --acp --port 10080）
+      # ACP Server 連線設定（連線到主機上執行的 copilot --headless --port）
       - Acp__CliUrl=${ACP_CLI_URL:-host.docker.internal:10080}
       - Acp__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT:-120}
       # Agent 綁定
@@ -28,3 +47,7 @@ services:
       # 允許容器連線到主機（macOS/Windows Docker Desktop 預設支援 host.docker.internal）
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

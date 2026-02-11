@@ -1,0 +1,24 @@
+# Caddy 反向代理設定 — 自動 HTTPS 憑證管理（Let's Encrypt）
+# 域名透過環境變數 DOMAIN 設定，預設為 Ai-Assistant.jcome.uk
+
+{$DOMAIN} {
+	# 反向代理到 API 服務
+	reverse_proxy ai-im-connector:8080
+
+	# 啟用壓縮
+	encode gzip zstd
+
+	# 日誌
+	log {
+		output stdout
+		format console
+	}
+
+	# 安全標頭
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
