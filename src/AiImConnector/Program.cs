@@ -38,6 +38,9 @@ var app = builder.Build();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<WebhookValidationMiddleware>();
 
+// 靜態檔案（服務條款等頁面）
+app.UseStaticFiles();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
