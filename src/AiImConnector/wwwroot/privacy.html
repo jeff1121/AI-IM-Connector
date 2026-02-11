@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隱私權政策 — AI IM Connector</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+            line-height: 1.8;
+            color: #333;
+            background: #f9fafb;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 3rem;
+        }
+        h1 {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+            color: #111;
+        }
+        .updated {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            font-size: 1.25rem;
+            margin-top: 2rem;
+            margin-bottom: 0.75rem;
+            color: #222;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 0.5rem;
+        }
+        p, li {
+            margin-bottom: 0.75rem;
+            font-size: 1rem;
+        }
+        ul, ol {
+            padding-left: 1.5rem;
+        }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        th, td {
+            border: 1px solid #e5e7eb;
+            padding: 0.6rem 1rem;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        footer {
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #eee;
+            text-align: center;
+            color: #999;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 隱私權政策</h1>
+        <p class="updated">最後更新日期：2026 年 2 月 11 日</p>
+
+        <p>AI IM Connector（以下簡稱「本服務」）非常重視您的隱私。本隱私權政策說明本服務如何蒐集、使用、儲存及保護您的個人資料。</p>
+
+        <h2>1. 蒐集的資料</h2>
+        <p>當您使用本服務時，我們可能會蒐集以下資料：</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>資料類型</th>
+                    <th>說明</th>
+                    <th>目的</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>使用者識別碼</td>
+                    <td>IM 平台提供的使用者 ID（如 LINE User ID）</td>
+                    <td>識別對話 Session、維持對話上下文</td>
+                </tr>
+                <tr>
+                    <td>文字訊息</td>
+                    <td>您傳送至本服務的文字內容</td>
+                    <td>轉發至 AI 進行處理並產生回覆</td>
+                </tr>
+                <tr>
+                    <td>多媒體內容</td>
+                    <td>您傳送的圖片、影片、音訊、檔案</td>
+                    <td>轉換為描述文字提供 AI 理解上下文</td>
+                </tr>
+                <tr>
+                    <td>對話紀錄</td>
+                    <td>對話過程中的訊息歷史</td>
+                    <td>維持對話連續性，提供上下文感知回覆</td>
+                </tr>
+            </tbody>
+        </table>
+        <p><strong>我們不會蒐集：</strong>您的姓名、電子郵件、電話號碼、地址或其他可直接識別個人身分的資訊（除非您主動在對話中提供）。</p>
+
+        <h2>2. 資料使用方式</h2>
+        <p>您的資料僅用於以下目的：</p>
+        <ul>
+            <li><strong>提供服務</strong>：將您的訊息轉發至 AI 助理並回傳回覆。</li>
+            <li><strong>維持對話上下文</strong>：暫時保存對話歷史，讓 AI 能理解先前的對話內容。</li>
+            <li><strong>服務改善</strong>：分析匿名化的使用統計資料（如訊息數量、回應時間），以改善服務品質。</li>
+        </ul>
+
+        <h2>3. 資料儲存與保留</h2>
+        <ul>
+            <li>對話 Session 資料儲存於伺服器記憶體中，不會永久保存。</li>
+            <li>當您使用 <code>/clear</code> 指令時，您的對話歷史將立即被清除。</li>
+            <li>閒置超過一定時間的 Session 會自動清理。</li>
+            <li>本服務不會將您的對話內容儲存至資料庫或持久化儲存媒體。</li>
+        </ul>
+
+        <h2>4. 資料分享與第三方</h2>
+        <p>您的訊息會在以下情況下與第三方共享：</p>
+        <ul>
+            <li><strong>AI 服務提供商</strong>：您的訊息會被轉發至 AI 模型（如 GitHub Copilot）進行處理。AI 服務提供商有其自身的隱私權政策與資料處理規範。</li>
+            <li><strong>IM 平台</strong>：回覆訊息會透過 LINE、Telegram 等平台的 API 傳送，這些平台有各自的隱私權政策。</li>
+        </ul>
+        <p>除上述情況外，我們不會將您的資料提供給任何其他第三方，除非：</p>
+        <ul>
+            <li>經您明確同意。</li>
+            <li>依法律規定或主管機關合法要求。</li>
+        </ul>
+
+        <h2>5. 資料安全</h2>
+        <p>我們採取以下措施保護您的資料安全：</p>
+        <ul>
+            <li>所有 Webhook 通訊均透過 HTTPS 加密傳輸。</li>
+            <li>LINE Webhook 請求均經過 HMAC-SHA256 簽名驗證。</li>
+            <li>服務以非特權使用者身分執行，降低安全風險。</li>
+            <li>敏感設定（API Token、Secret）透過環境變數管理，不寫入程式碼。</li>
+        </ul>
+
+        <h2>6. 您的權利</h2>
+        <p>根據相關隱私法規，您享有以下權利：</p>
+        <ul>
+            <li><strong>清除權</strong>：您可隨時使用 <code>/clear</code> 指令清除對話歷史。</li>
+            <li><strong>停止使用</strong>：您可隨時停止使用本服務，不需要任何額外操作。</li>
+            <li><strong>查詢權</strong>：您可透過 <code>/status</code> 指令查看目前的 Session 狀態。</li>
+            <li><strong>申訴權</strong>：如認為您的隱私權受到侵害，您有權向主管機關提出申訴。</li>
+        </ul>
+
+        <h2>7. Cookie 與追蹤技術</h2>
+        <p>本服務透過 IM 平台的 Webhook 運作，不使用 Cookie 或其他瀏覽器追蹤技術。</p>
+
+        <h2>8. 兒童隱私</h2>
+        <p>本服務不針對未滿 18 歲的未成年人提供服務。如果我們得知有未成年人未經監護人同意使用本服務，將採取適當措施刪除相關資料。</p>
+
+        <h2>9. 政策修改</h2>
+        <p>我們保留隨時修改本隱私權政策的權利。修改後的政策將於本頁面公布，並更新「最後更新日期」。我們建議您定期查閱本政策以了解最新內容。</p>
+
+        <h2>10. 聯絡我們</h2>
+        <p>如對本隱私權政策有任何疑問或需要行使您的權利，請透過以下方式聯繫我們：</p>
+        <ul>
+            <li>在 IM 平台上使用 <code>/help</code> 指令取得協助</li>
+        </ul>
+
+        <footer>
+            &copy; 2026 AI IM Connector. All rights reserved.
+            <br>
+            <a href="terms.html">服務條款</a>
+        </footer>
+    </div>
+</body>
+</html>
