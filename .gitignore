@@ -1,3 +1,7 @@
+## 環境變數（包含敏感資訊）
+.env
+!.env.example
+
 ## .NET
 bin/
 obj/

@@ -10,7 +10,7 @@ services:
       - "443:443"
       - "443:443/udp"   # HTTP/3
     environment:
-      - DOMAIN=${DOMAIN:-Ai-Assistant.jcome.uk}
+      - DOMAIN=${DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data      # 憑證持久化
@@ -28,21 +28,21 @@ services:
     expose:
       - "8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      # LINE 設定（請替換為實際值）
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      # LINE 設定
       - Im__Line__ChannelAccessToken=${LINE_CHANNEL_ACCESS_TOKEN}
       - Im__Line__ChannelSecret=${LINE_CHANNEL_SECRET}
-      # Telegram 設定（請替換為實際值）
+      # Telegram 設定
       - Im__Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
       - Im__Telegram__SecretToken=${TELEGRAM_SECRET_TOKEN}
       # ACP Server 連線設定（連線到主機上執行的 copilot --headless --port）
-      - Acp__CliUrl=${ACP_CLI_URL:-host.docker.internal:10080}
-      - Acp__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT:-120}
+      - Acp__CliUrl=${ACP_CLI_URL}
+      - Acp__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT}
       # Agent 綁定
-      - AgentBindings__Bindings__Line__AgentName=${LINE_AGENT_NAME:-copilot-cli}
-      - AgentBindings__Bindings__Line__Model=${LINE_MODEL:-gpt-5}
-      - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME:-gemini-cli}
-      - AgentBindings__Bindings__Telegram__Model=${TELEGRAM_MODEL:-claude-sonnet-4.5}
+      - AgentBindings__Bindings__Line__AgentName=${LINE_AGENT_NAME}
+      - AgentBindings__Bindings__Line__Model=${LINE_MODEL}
+      - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME}
+      - AgentBindings__Bindings__Telegram__Model=${TELEGRAM_MODEL}
     extra_hosts:
       # 允許容器連線到主機（macOS/Windows Docker Desktop 預設支援 host.docker.internal）
       - "host.docker.internal:host-gateway"
