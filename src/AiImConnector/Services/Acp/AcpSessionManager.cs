@@ -1,13 +1,12 @@
 using System.Collections.Concurrent;
 using AiImConnector.Configuration;
-using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// Copilot Session 管理器 — 管理每個使用者對應的 Copilot Session 生命週期
+/// ACP Session 管理器 — 管理每個使用者對應的 ACP Session 生命週期
 /// </summary>
 public class CopilotSessionManager
 {
@@ -15,8 +14,8 @@ public class CopilotSessionManager
     private readonly AgentBindingSettings _bindingSettings;
     private readonly ILogger<CopilotSessionManager> _logger;
 
-    /// <summary>活躍的 Session 快取（SessionId → CopilotSession）</summary>
-    private readonly ConcurrentDictionary<string, CopilotSession> _sessions = new();
+    /// <summary>使用者對應的 ACP Session ID（UserKey → AcpSessionId）</summary>
+    private readonly ConcurrentDictionary<string, string> _sessions = new();
 
     public CopilotSessionManager(
         ICopilotClientService clientService,
@@ -35,77 +34,53 @@ public class CopilotSessionManager
         return binding;
     }
 
-    /// <summary>取得或建立使用者的 Copilot Session</summary>
-    public async Task<CopilotSession> GetOrCreateSessionAsync(
+    /// <summary>取得或建立使用者的 ACP Session</summary>
+    public async Task<string> GetOrCreateSessionAsync(
         string platform,
         string userId,
         CancellationToken cancellationToken = default)
     {
-        var sessionId = BuildSessionId(platform, userId);
+        var userKey = BuildSessionId(platform, userId);
 
         // 嘗試從快取取得
-        if (_sessions.TryGetValue(sessionId, out var existingSession))
+        if (_sessions.TryGetValue(userKey, out var existingSessionId))
         {
-            return existingSession;
-        }
-
-        // 嘗試恢復先前的 Session
-        var resumed = await _clientService.ResumeSessionAsync(sessionId, cancellationToken);
-        if (resumed != null)
-        {
-            _sessions.TryAdd(sessionId, resumed);
-            _logger.LogInformation("恢復 Session 成功：{SessionId}", sessionId);
-            return resumed;
+            return existingSessionId;
         }
 
         // 建立新的 Session
-        var binding = GetBinding(platform);
-        var model = binding?.Model ?? "gpt-5";
-
-        var session = await _clientService.CreateSessionAsync(sessionId, model, cancellationToken);
-        _sessions.TryAdd(sessionId, session);
-        _logger.LogInformation("建立新 Session：{SessionId}，模型：{Model}", sessionId, model);
-        return session;
+        var sessionId = await _clientService.CreateSessionAsync(cancellationToken);
+        _sessions.TryAdd(userKey, sessionId);
+        _logger.LogInformation("建立新 Session：{UserKey} → {SessionId}", userKey, sessionId);
+        return sessionId;
     }
 
-    /// <summary>發送訊息到 Copilot 並等待回應</summary>
+    /// <summary>發送訊息到 ACP 並等待回應</summary>
     public async Task<string> SendMessageAsync(
         string platform,
         string userId,
         string prompt,
         CancellationToken cancellationToken = default)
     {
-        var session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
+        var sessionId = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
         var binding = GetBinding(platform);
+        var model = binding?.Model;
         var timeout = binding != null
             ? TimeSpan.FromSeconds(binding.ResponseTimeoutSeconds)
             : TimeSpan.FromSeconds(120);
 
-        return await _clientService.SendAndWaitAsync(session, prompt, timeout, cancellationToken);
+        return await _clientService.SendAndWaitAsync(sessionId, prompt, model, timeout, cancellationToken);
     }
 
     /// <summary>清除使用者的 Session</summary>
-    public async Task ClearSessionAsync(string platform, string userId, CancellationToken cancellationToken = default)
+    public Task ClearSessionAsync(string platform, string userId, CancellationToken cancellationToken = default)
     {
-        var sessionId = BuildSessionId(platform, userId);
-
-        if (_sessions.TryRemove(sessionId, out var session))
-        {
-            await session.DisposeAsync();
-        }
-
-        try
-        {
-            await _clientService.DeleteSessionAsync(sessionId, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "刪除 Session 時發生例外：{SessionId}", sessionId);
-        }
-
-        _logger.LogInformation("已清除 Session：{SessionId}", sessionId);
+        var userKey = BuildSessionId(platform, userId);
+        _sessions.TryRemove(userKey, out _);
+        _logger.LogInformation("已清除 Session：{UserKey}", userKey);
+        return Task.CompletedTask;
     }
 
-    /// <summary>產生 Session ID</summary>
+    /// <summary>產生使用者 Key</summary>
     public static string BuildSessionId(string platform, string userId) => $"{platform}:{userId}";
 }
