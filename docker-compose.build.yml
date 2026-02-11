@@ -1,0 +1,12 @@
+# =============================================================================
+# AI IM Connector — 建置 Docker Image
+# 使用方式：docker compose -f docker-compose.build.yml build
+# 推送至 ACR：./publish.sh
+# =============================================================================
+
+services:
+  ai-im-connector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${ACR_REGISTRY}/ai-connector/ai-im-connector:${IMAGE_VERSION}

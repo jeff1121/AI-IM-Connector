@@ -1,15 +1,12 @@
 # =============================================================================
-# AI IM Connector — API 服務
+# AI IM Connector — 部署（使用 ACR 上的 Image）
 # 使用方式：docker compose up -d
 # 需先建立外部網路：docker network create public-web
 # =============================================================================
 
 services:
-  # === API 服務 ===
   ai-im-connector:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${ACR_REGISTRY}/ai-connector/ai-im-connector:${IMAGE_VERSION}
     container_name: ai-im-connector
     expose:
       - "8080"
@@ -30,7 +27,6 @@ services:
       - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME}
       - AgentBindings__Bindings__Telegram__Model=${TELEGRAM_MODEL}
     extra_hosts:
-      # 允許容器連線到主機（macOS/Windows Docker Desktop 預設支援 host.docker.internal）
       - "host.docker.internal:host-gateway"
     networks:
       - public-web
