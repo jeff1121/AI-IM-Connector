@@ -6,7 +6,7 @@
 
 services:
   ai-im-connector:
-    image: ${ACR_REGISTRY}/ai-connector/ai-im-connector:${IMAGE_VERSION}
+    image: ${ACR_REGISTRY}/ai-connector/im-connector:${IMAGE_VERSION}
     container_name: ai-im-connector
     expose:
       - "8080"

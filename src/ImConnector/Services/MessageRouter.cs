@@ -6,7 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace AiImConnector.Services;
 
 /// <summary>
-/// 訊息路由服務 — 負責將 IM 訊息轉發到 Copilot SDK，並將回應轉回 IM
+/// 訊息路由服務 — 負責將 IM 訊息轉發到 Copilot SDK，並將回應轉回 IM。
+/// 處理使用者指令（/clear、/help、/status）及多媒體內容描述的 Prompt 組合。
 /// </summary>
 public class MessageRouter
 {

@@ -9,7 +9,8 @@ using Microsoft.Extensions.Options;
 namespace AiImConnector.Adapters.Line;
 
 /// <summary>
-/// LINE Webhook 控制器 — 接收 LINE 平台的 Webhook 事件
+/// LINE Webhook 控制器 — 接收 LINE 平台的 Webhook 事件。
+/// 使用 HMAC-SHA256 常數時間比較驗證簽名，防止 timing attack。
 /// </summary>
 [ApiController]
 [Route("api/webhook/line")]
@@ -94,7 +95,7 @@ public class LineWebhookController : ControllerBase
         return Ok();
     }
 
-    /// <summary>驗證 LINE Webhook 簽名</summary>
+    /// <summary>驗證 LINE Webhook 簽名（使用常數時間比較，防止 timing attack）</summary>
     private bool ValidateSignature(string body, string? signature)
     {
         if (string.IsNullOrEmpty(signature) || string.IsNullOrEmpty(_settings.ChannelSecret))
@@ -104,9 +105,18 @@ public class LineWebhookController : ControllerBase
         var bodyBytes = Encoding.UTF8.GetBytes(body);
 
         using var hmac = new HMACSHA256(key);
-        var hash = hmac.ComputeHash(bodyBytes);
-        var computed = Convert.ToBase64String(hash);
+        var computedHash = hmac.ComputeHash(bodyBytes);
 
-        return computed == signature;
+        byte[] signatureBytes;
+        try
+        {
+            signatureBytes = Convert.FromBase64String(signature);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        return CryptographicOperations.FixedTimeEquals(computedHash, signatureBytes);
     }
 }

@@ -1,8 +1,8 @@
 namespace AiImConnector.Middleware;
 
 /// <summary>
-/// Webhook 驗證中介層 — 記錄所有 Webhook 請求的基本資訊
-/// （各平台的簽名驗證在各自的 Controller 中處理）
+/// Webhook 驗證中介層 — 記錄所有 Webhook 請求的基本資訊並啟用 Body 緩衝。
+/// 各平台的簽名驗證（如 LINE HMAC-SHA256、Telegram Secret Token）在各自的 Controller 中處理。
 /// </summary>
 public class WebhookValidationMiddleware
 {

@@ -4,12 +4,21 @@ using Microsoft.Extensions.Logging;
 namespace AiImConnector.Services.Media;
 
 /// <summary>
-/// 多媒體處理實作 — 負責多媒體檔案的下載、轉換與類型判斷
+/// 多媒體處理實作 — 負責多媒體檔案的下載、轉換與類型判斷。
+/// 包含 URL 驗證以防止 SSRF（Server-Side Request Forgery）攻擊。
 /// </summary>
 public class MediaHandler : IMediaHandler
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<MediaHandler> _logger;
+
+    /// <summary>允許下載多媒體的合法主機清單（僅限 IM 平台官方 API）</summary>
+    private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "api-data.line.me",
+        "api.line.me",
+        "api.telegram.org"
+    };
 
     public MediaHandler(HttpClient httpClient, ILogger<MediaHandler> logger)
     {
@@ -23,6 +32,9 @@ public class MediaHandler : IMediaHandler
         Dictionary<string, string>? headers = null,
         CancellationToken cancellationToken = default)
     {
+        // SSRF 防護：驗證 URL 是否為允許的 IM 平台主機
+        ValidateUrl(url);
+
         _logger.LogDebug("正在下載多媒體檔案：{Url}", url);
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -82,5 +94,21 @@ public class MediaHandler : IMediaHandler
             var m when m.StartsWith("audio/") => MediaType.Audio,
             _ => MediaType.File
         };
+    }
+
+    /// <summary>
+    /// 驗證下載 URL 是否為允許的 IM 平台主機，防止 SSRF 攻擊。
+    /// 僅允許 HTTPS 協定且主機必須在白名單中。
+    /// </summary>
+    private static void ValidateUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            throw new ArgumentException($"無效的多媒體 URL 格式");
+
+        if (uri.Scheme != Uri.UriSchemeHttps)
+            throw new ArgumentException($"僅允許 HTTPS 協定下載多媒體");
+
+        if (!AllowedHosts.Contains(uri.Host))
+            throw new ArgumentException($"不允許從此主機下載多媒體");
     }
 }

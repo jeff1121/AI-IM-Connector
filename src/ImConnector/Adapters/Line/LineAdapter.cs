@@ -9,7 +9,8 @@ using System.Text.Json;
 namespace AiImConnector.Adapters.Line;
 
 /// <summary>
-/// LINE 適配器 — 負責與 LINE Messaging API 互動
+/// LINE 適配器 — 負責與 LINE Messaging API 互動。
+/// 支援 Reply 與 Push 兩種訊息發送模式，含文字長度截斷（LINE 上限 5000 字元）。
 /// </summary>
 public class LineAdapter : IImAdapter
 {

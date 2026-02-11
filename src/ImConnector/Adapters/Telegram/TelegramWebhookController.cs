@@ -8,7 +8,8 @@ using Telegram.Bot.Types;
 namespace AiImConnector.Adapters.Telegram;
 
 /// <summary>
-/// Telegram Webhook 控制器 — 接收 Telegram Bot 的 Webhook 更新
+/// Telegram Webhook 控制器 — 接收 Telegram Bot 的 Webhook 更新。
+/// 支援 Secret Token 驗證以確保請求來源合法。
 /// </summary>
 [ApiController]
 [Route("api/webhook/telegram")]

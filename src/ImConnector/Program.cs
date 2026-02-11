@@ -14,7 +14,7 @@ builder.Services.Configure<TelegramSettings>(builder.Configuration.GetSection(Te
 builder.Services.Configure<AcpSettings>(builder.Configuration.GetSection(AcpSettings.SectionName));
 builder.Services.Configure<AgentBindingSettings>(builder.Configuration.GetSection(AgentBindingSettings.SectionName));
 
-// === Copilot SDK 服務註冊 ===
+// === Copilot SDK 服務註冊（Singleton 確保 Session 全域共享） ===
 builder.Services.AddSingleton<ICopilotClientService, CopilotClientService>();
 builder.Services.AddSingleton<CopilotSessionManager>();
 builder.Services.AddHttpClient<IMediaHandler, MediaHandler>();

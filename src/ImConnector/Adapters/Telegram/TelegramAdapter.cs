@@ -9,7 +9,9 @@ using Telegram.Bot.Types.Enums;
 namespace AiImConnector.Adapters.Telegram;
 
 /// <summary>
-/// Telegram 適配器 — 負責與 Telegram Bot API 互動
+/// Telegram 適配器 — 負責與 Telegram Bot API 互動。
+/// 支援文字分段發送（Telegram 上限 4096 字元）及多媒體訊息發送（URL 或 Base64）。
+/// ChatId 使用安全的 TryParse 解析，防止格式異常。
 /// </summary>
 public class TelegramAdapter : IImAdapter
 {
@@ -35,7 +37,13 @@ public class TelegramAdapter : IImAdapter
             return;
         }
 
-        var chatId = new ChatId(long.Parse(message.ChatId));
+        if (!long.TryParse(message.ChatId, out var chatIdValue))
+        {
+            _logger.LogWarning("Telegram ChatId 格式無效：{ChatId}", message.ChatId);
+            return;
+        }
+
+        var chatId = new ChatId(chatIdValue);
 
         // Telegram 文字訊息限制 4096 字元
         if (replyText.Length > 4096)
@@ -62,7 +70,13 @@ public class TelegramAdapter : IImAdapter
             return;
         }
 
-        var chatId = new ChatId(long.Parse(message.ChatId));
+        if (!long.TryParse(message.ChatId, out var chatIdValue))
+        {
+            _logger.LogWarning("Telegram 多媒體回覆 ChatId 格式無效：{ChatId}", message.ChatId);
+            return;
+        }
+
+        var chatId = new ChatId(chatIdValue);
 
         // 如果有 URL，直接用 URL 發送
         if (!string.IsNullOrEmpty(media.SourceUrl))

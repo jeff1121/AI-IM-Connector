@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// Copilot SDK 客戶端實作 — 封裝 CopilotClient，支援連線到外部 ACP Server 或自動啟動 CLI
+/// Copilot SDK 客戶端實作 — 封裝 CopilotClient，支援連線到外部 ACP Server 或自動啟動 CLI。
+/// 實作 IAsyncDisposable 確保資源正確釋放。
 /// </summary>
 public class CopilotClientService : ICopilotClientService
 {

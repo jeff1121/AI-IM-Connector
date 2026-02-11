@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AiImConnector\AiImConnector.csproj" />
+    <ProjectReference Include="..\..\src\ImConnector\AiImConnector.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,4 +9,4 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${ACR_REGISTRY}/ai-connector/ai-im-connector:${IMAGE_VERSION}
+    image: ${ACR_REGISTRY}/ai-connector/im-connector:${IMAGE_VERSION}

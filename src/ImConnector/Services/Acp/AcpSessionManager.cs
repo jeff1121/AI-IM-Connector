@@ -7,7 +7,8 @@ using Microsoft.Extensions.Options;
 namespace AiImConnector.Services.Acp;
 
 /// <summary>
-/// Copilot Session 管理器 — 管理每個使用者對應的 CopilotSession 生命週期
+/// Copilot Session 管理器 — 管理每個使用者對應的 CopilotSession 生命週期。
+/// 使用 per-user SemaphoreSlim 鎖定確保執行緒安全，防止同一使用者並行建立多個 Session。
 /// </summary>
 public class CopilotSessionManager
 {
@@ -18,6 +19,9 @@ public class CopilotSessionManager
 
     /// <summary>使用者對應的 CopilotSession（UserKey → CopilotSession）</summary>
     private readonly ConcurrentDictionary<string, CopilotSession> _sessions = new();
+
+    /// <summary>建立 Session 時的鎖定物件，防止同一使用者並行建立多個 Session</summary>
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
 
     public CopilotSessionManager(
         ICopilotClientService clientService,
@@ -38,7 +42,7 @@ public class CopilotSessionManager
         return binding;
     }
 
-    /// <summary>取得或建立使用者的 CopilotSession</summary>
+    /// <summary>取得或建立使用者的 CopilotSession（執行緒安全，防止同一使用者並行建立重複 Session）</summary>
     public async Task<CopilotSession> GetOrCreateSessionAsync(
         string platform,
         string userId,
@@ -51,13 +55,29 @@ public class CopilotSessionManager
             return existingSession;
         }
 
-        var binding = GetBinding(platform);
-        var model = binding?.Model;
+        // 使用 per-user lock 確保同一使用者不會並行建立多個 Session
+        var sessionLock = _sessionLocks.GetOrAdd(userKey, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync(cancellationToken);
+        try
+        {
+            // Double-check：可能在等待 lock 期間已被其他執行緒建立
+            if (_sessions.TryGetValue(userKey, out existingSession))
+            {
+                return existingSession;
+            }
 
-        var session = await _clientService.CreateSessionAsync(model, cancellationToken);
-        _sessions.TryAdd(userKey, session);
-        _logger.LogInformation("建立新 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
-        return session;
+            var binding = GetBinding(platform);
+            var model = binding?.Model;
+
+            var session = await _clientService.CreateSessionAsync(model, cancellationToken);
+            _sessions.TryAdd(userKey, session);
+            _logger.LogInformation("建立新 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
+            return session;
+        }
+        finally
+        {
+            sessionLock.Release();
+        }
     }
 
     /// <summary>發送訊息到 Copilot 並等待回應</summary>
@@ -76,11 +96,8 @@ public class CopilotSessionManager
         _logger.LogDebug("發送 prompt 到 Session {SessionId}：{Prompt}",
             session.SessionId, prompt.Length > 100 ? prompt[..100] + "..." : prompt);
 
-        // 使用 SDK 的 SendAndWaitAsync
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(timeout);
-
-        var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt });
+        // 使用 SDK 的 SendAndWaitAsync（含逾時控制）
+        var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
 
         var content = response?.Data?.Content ?? "";
         _logger.LogDebug("收到完整回應（{Length} 字元）", content.Length);

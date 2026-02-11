@@ -12,9 +12,9 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"   # HTTP/3
-    environment:
-      - DOMAIN=${DOMAIN}
-      - ACME_EMAIL=${ACME_EMAIL}
+    #environment:
+    #  - DOMAIN=${DOMAIN}
+    #  - ACME_EMAIL=${ACME_EMAIL}
     volumes:
       - ${CADDYFILE_PATH:-./Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data      # 憑證持久化

@@ -44,7 +44,7 @@
 | ⚙️ 模型綁定 | 設定檔配置每個 IM 平台使用不同的 AI 模型 |
 | 🎯 指令系統 | `/clear`（清除對話）、`/help`（說明）、`/status`（連線狀態） |
 | 🐳 Docker 部署 | 多階段建置的容器化部署 |
-| 🔒 安全性 | Webhook 簽名驗證、全域例外處理、非 root 容器執行 |
+| 🔒 安全性 | Webhook 簽名驗證（常數時間比較）、SSRF 防護、全域例外處理（Production 隱藏細節）、非 root 容器執行 |
 
 ## 📋 前置需求
 
@@ -287,6 +287,19 @@ AI-IM-Connector/
 3. **Copilot CLI 自動下載**：SDK 會在首次建置時自動下載 Copilot CLI，無需手動安裝
 4. **多媒體限制**：各 IM 平台有不同的檔案大小限制，MediaHandler 會處理相關驗證
 5. **Secret 管理**：所有敏感資訊（Token、Secret）請使用環境變數或 User Secrets，切勿寫入程式碼
+
+## 🔒 安全性措施
+
+| 項目 | 說明 |
+|------|------|
+| Webhook 簽名驗證 | LINE 使用 HMAC-SHA256 常數時間比較（`CryptographicOperations.FixedTimeEquals`），防止 timing attack |
+| Telegram 驗證 | 支援 Secret Token 驗證請求來源合法性 |
+| SSRF 防護 | MediaHandler 限制多媒體下載 URL 僅允許 IM 平台官方 API（白名單機制） |
+| 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏內部錯誤細節 |
+| 執行緒安全 | CopilotSessionManager 使用 per-user SemaphoreSlim 防止並行建立重複 Session |
+| 輸入驗證 | Telegram ChatId 使用安全的 TryParse 解析，避免格式異常 |
+| 容器安全 | Docker 以非 root 使用者執行 |
+| HTTPS 強制 | Caddy 反向代理自動管理 Let's Encrypt 憑證 |
 
 ## 📄 授權
 
