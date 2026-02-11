@@ -1,5 +1,11 @@
 # Caddy 反向代理設定 — 自動 HTTPS 憑證管理（Let's Encrypt）
-# 域名透過環境變數 DOMAIN 設定，預設為 Ai-Assistant.jcome.uk
+# 域名透過環境變數 DOMAIN 設定
+# 憑證註冊 email 透過環境變數 ACME_EMAIL 設定
+
+# 全域設定
+{
+	email {$ACME_EMAIL}
+}
 
 {$DOMAIN} {
 	# 反向代理到 API 服務
