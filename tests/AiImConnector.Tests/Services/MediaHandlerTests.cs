@@ -35,39 +35,41 @@ public class MediaHandlerTests
     }
 
     [Fact]
-    public async Task ToAcpAttachmentAsync_有Base64資料_應正確轉換()
+    public void ToMediaDescription_圖片_應產生正確描述()
     {
         // Arrange
         var media = new MediaContent
         {
             Type = MediaType.Image,
             MimeType = "image/png",
-            Base64Data = Convert.ToBase64String(new byte[] { 1, 2, 3 }),
-            FileName = "test.png"
+            FileName = "test.png",
+            FileSize = 1024
         };
 
         // Act
-        var attachment = await _handler.ToAcpAttachmentAsync(media);
+        var description = _handler.ToMediaDescription(media);
 
         // Assert
-        Assert.Equal("image", attachment.Type);
-        Assert.Equal("image/png", attachment.MimeType);
-        Assert.Equal("test.png", attachment.FileName);
-        Assert.NotEmpty(attachment.Data);
+        Assert.Contains("圖片", description);
+        Assert.Contains("test.png", description);
+        Assert.Contains("1024", description);
     }
 
     [Fact]
-    public async Task ToAcpAttachmentAsync_無Base64且有URL_應拋出例外()
+    public void ToMediaDescription_無檔名_應使用MimeType()
     {
         // Arrange
         var media = new MediaContent
         {
-            Type = MediaType.Image,
-            SourceUrl = "https://example.com/image.png"
+            Type = MediaType.Audio,
+            MimeType = "audio/mpeg"
         };
 
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _handler.ToAcpAttachmentAsync(media));
+        // Act
+        var description = _handler.ToMediaDescription(media);
+
+        // Assert
+        Assert.Contains("音訊", description);
+        Assert.Contains("audio/mpeg", description);
     }
 }

@@ -14,8 +14,8 @@ public interface IMediaHandler
     /// <returns>含 Base64 資料的 MediaContent</returns>
     Task<MediaContent> DownloadAsBase64Async(string url, Dictionary<string, string>? headers = null, CancellationToken cancellationToken = default);
 
-    /// <summary>從多媒體內容建立 ACP 附件</summary>
-    Task<AcpAttachment> ToAcpAttachmentAsync(MediaContent media, CancellationToken cancellationToken = default);
+    /// <summary>將多媒體內容轉換為文字描述（供 AI 理解）</summary>
+    string ToMediaDescription(MediaContent media);
 
     /// <summary>從 MIME 類型判斷多媒體類型</summary>
     MediaType DetectMediaType(string mimeType);

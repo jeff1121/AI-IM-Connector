@@ -56,23 +56,20 @@ public class MediaHandler : IMediaHandler
     }
 
     /// <inheritdoc />
-    public Task<AcpAttachment> ToAcpAttachmentAsync(MediaContent media, CancellationToken cancellationToken = default)
+    public string ToMediaDescription(MediaContent media)
     {
-        // 如果沒有 Base64 資料，需要先下載
-        if (string.IsNullOrEmpty(media.Base64Data) && !string.IsNullOrEmpty(media.SourceUrl))
+        var typeName = media.Type switch
         {
-            throw new InvalidOperationException("多媒體內容尚未下載，請先呼叫 DownloadAsBase64Async");
-        }
-
-        var attachment = new AcpAttachment
-        {
-            Type = media.Type.ToString().ToLowerInvariant(),
-            MimeType = media.MimeType,
-            Data = media.Base64Data ?? string.Empty,
-            FileName = media.FileName
+            MediaType.Image => "圖片",
+            MediaType.Video => "影片",
+            MediaType.Audio => "音訊",
+            MediaType.File => "檔案",
+            _ => "多媒體內容"
         };
 
-        return Task.FromResult(attachment);
+        var detail = media.FileName ?? media.MimeType;
+        var size = media.FileSize > 0 ? $"，大小：{media.FileSize} bytes" : "";
+        return $"[使用者傳送了一個{typeName}：{detail}{size}]";
     }
 
     /// <inheritdoc />
