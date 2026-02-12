@@ -111,10 +111,15 @@ public class MessageRouter
                 response.Text = string.IsNullOrEmpty(response.Text)
                     ? string.Join("\n", linkLines)
                     : response.Text + "\n\n" + string.Join("\n", linkLines);
-
-                // 已轉為文字 URL，清除 MediaContents 避免 Controller 重複推送
-                response.MediaContents.Clear();
             }
+            else if (response.MediaContents.Count > 0)
+            {
+                _logger.LogWarning("AI 回應包含 {Count} 個多媒體但暫存失敗（PublicBaseUrl 可能未設定），無法產生下載連結",
+                    response.MediaContents.Count);
+            }
+
+            // 清除 MediaContents — 已轉為文字 URL 或暫存失敗均不再交由 Controller 推送
+            response.MediaContents.Clear();
 
             return response;
         }
