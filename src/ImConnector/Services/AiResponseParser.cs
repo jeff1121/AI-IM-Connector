@@ -19,9 +19,9 @@ public static class AiResponseParser
         @"(?<=\s|^)(https?://[^\s<>""']+\.(?:png|jpe?g|gif|webp|bmp)(?:\?[^\s<>""']*)?)(?=[\s,。、！？)）\]」]|$)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
 
-    // Base64 Data URI（不在 Markdown 語法內）
+    // Base64 Data URI（不在 Markdown 語法內）— 允許 base64 內含換行/空白
     private static readonly Regex Base64DataUriRegex = new(
-        @"data:(image/[\w+.\-]+);base64,([A-Za-z0-9+/=]+)",
+        @"data:(image/[\w+.\-]+);base64,([A-Za-z0-9+/=\s]+)",
         RegexOptions.Compiled);
 
     // 本機檔案路徑（Windows 或 Unix 絕對路徑，指向圖片檔）
@@ -52,7 +52,7 @@ public static class AiResponseParser
                 {
                     Type = MediaType.Image,
                     MimeType = base64Match.Groups[1].Value,
-                    Base64Data = base64Match.Groups[2].Value,
+                    Base64Data = SanitizeBase64(base64Match.Groups[2].Value),
                     FileName = !string.IsNullOrEmpty(altText) ? SanitizeFileName(altText) : null
                 });
                 return "";
@@ -80,7 +80,7 @@ public static class AiResponseParser
             {
                 Type = MediaType.Image,
                 MimeType = match.Groups[1].Value,
-                Base64Data = match.Groups[2].Value
+                Base64Data = SanitizeBase64(match.Groups[2].Value)
             });
             return "";
         });
@@ -135,6 +135,11 @@ public static class AiResponseParser
             _ => "image/png"
         };
     }
+
+    private static readonly Regex WhitespaceRegex = new(@"\s", RegexOptions.Compiled);
+
+    /// <summary>移除 Base64 字串中的空白與換行字元</summary>
+    private static string SanitizeBase64(string base64) => WhitespaceRegex.Replace(base64, "");
 
     /// <summary>清理檔名中的非法字元</summary>
     private static string SanitizeFileName(string name)

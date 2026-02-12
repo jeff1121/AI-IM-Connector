@@ -194,4 +194,28 @@ public class AiResponseParserTests
         Assert.Contains("文字前", result.Text);
         Assert.Contains("文字後", result.Text);
     }
+
+    [Fact]
+    public void Parse_MultiLineBase64_StripsWhitespace()
+    {
+        // AI 可能在 base64 字串中插入換行
+        var cleanBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        var multiLineBase64 = "iVBORw0KGgoAAAANSUhEUg\nAAAAEAAAABCAYAAAAfFcSJ\nAAAADUlEQVR42mNk+M9QDw\nADhgGAWjR9awAAAABJRU5E\nrkJggg==";
+        var input = $"![圖片](data:image/png;base64,{multiLineBase64})";
+        var result = AiResponseParser.Parse(input);
+
+        Assert.Single(result.MediaContents);
+        Assert.Equal(cleanBase64, result.MediaContents[0].Base64Data);
+    }
+
+    [Fact]
+    public void Parse_StandaloneMultiLineBase64_StripsWhitespace()
+    {
+        var cleanBase64 = "iVBORw0KGgo=";
+        var input = "data:image/png;base64,iVBOR\n w0KGgo= 完成";
+        var result = AiResponseParser.Parse(input);
+
+        Assert.Single(result.MediaContents);
+        Assert.Equal(cleanBase64, result.MediaContents[0].Base64Data);
+    }
 }

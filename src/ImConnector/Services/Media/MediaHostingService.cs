@@ -42,10 +42,21 @@ public class MediaHostingService : IDisposable
             return null;
         }
 
+        byte[] data;
+        try
+        {
+            data = Convert.FromBase64String(media.Base64Data);
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogWarning(ex, "無效的 Base64 資料，無法暫存多媒體（長度={Length}）", media.Base64Data.Length);
+            return null;
+        }
+
         var id = Guid.NewGuid().ToString("N");
         _store[id] = new HostedMedia
         {
-            Data = Convert.FromBase64String(media.Base64Data),
+            Data = data,
             MimeType = media.MimeType,
             FileName = media.FileName,
             ExpiresAt = DateTimeOffset.UtcNow.Add(_mediaTtl)

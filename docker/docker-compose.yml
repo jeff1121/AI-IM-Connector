@@ -2,6 +2,7 @@
 # AI IM Connector — 部署（使用 ACR 上的 Image）
 # 使用方式：docker compose up -d
 # 需先建立外部網路：docker network create public-web
+# Version: 0.2.3
 # =============================================================================
 
 services:
