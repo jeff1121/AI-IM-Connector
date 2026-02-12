@@ -72,7 +72,18 @@ public class TelegramWebhookController : ControllerBase
             try
             {
                 var response = await _messageRouter.RouteMessageAsync(message);
-                await _telegramAdapter.ReplyTextAsync(message, response);
+
+                // 發送文字回應
+                if (!string.IsNullOrEmpty(response.Text))
+                {
+                    await _telegramAdapter.ReplyTextAsync(message, response.Text);
+                }
+
+                // 發送多媒體回應
+                foreach (var media in response.MediaContents)
+                {
+                    await _telegramAdapter.ReplyMediaAsync(message, media);
+                }
             }
             catch (Exception ex)
             {

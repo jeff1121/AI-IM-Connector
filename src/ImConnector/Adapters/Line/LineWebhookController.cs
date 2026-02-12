@@ -77,7 +77,20 @@ public class LineWebhookController : ControllerBase
                     try
                     {
                         var response = await _messageRouter.RouteMessageAsync(message);
-                        await _lineAdapter.ReplyTextAsync(message, response);
+
+                        // 發送文字回應
+                        if (!string.IsNullOrEmpty(response.Text))
+                        {
+                            await _lineAdapter.ReplyTextAsync(message, response.Text);
+                            // Reply Token 已消耗，後續多媒體改用 Push API
+                            message.ReplyToken = null;
+                        }
+
+                        // 發送多媒體回應
+                        foreach (var media in response.MediaContents)
+                        {
+                            await _lineAdapter.ReplyMediaAsync(message, media);
+                        }
                     }
                     catch (Exception ex)
                     {

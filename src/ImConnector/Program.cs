@@ -9,6 +9,7 @@ using AiImConnector.Services.Media;
 var builder = WebApplication.CreateBuilder(args);
 
 // === 設定綁定 ===
+builder.Services.Configure<ConnectorSettings>(builder.Configuration.GetSection(ConnectorSettings.SectionName));
 builder.Services.Configure<LineSettings>(builder.Configuration.GetSection(LineSettings.SectionName));
 builder.Services.Configure<TelegramSettings>(builder.Configuration.GetSection(TelegramSettings.SectionName));
 builder.Services.Configure<AcpSettings>(builder.Configuration.GetSection(AcpSettings.SectionName));
@@ -18,6 +19,7 @@ builder.Services.Configure<AgentBindingSettings>(builder.Configuration.GetSectio
 builder.Services.AddSingleton<ICopilotClientService, CopilotClientService>();
 builder.Services.AddSingleton<CopilotSessionManager>();
 builder.Services.AddHttpClient<IMediaHandler, MediaHandler>();
+builder.Services.AddSingleton<MediaHostingService>();
 builder.Services.AddSingleton<MessageRouter>();
 
 // === IM 適配器註冊 ===

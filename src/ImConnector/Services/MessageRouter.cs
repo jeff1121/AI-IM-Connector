@@ -8,32 +8,37 @@ namespace AiImConnector.Services;
 /// <summary>
 /// 訊息路由服務 — 負責將 IM 訊息轉發到 Copilot SDK，並將回應轉回 IM。
 /// 處理使用者指令（/clear、/help、/status）及多媒體內容描述的 Prompt 組合。
+/// 支援解析 AI 回應中的多媒體內容（圖片 URL、Base64）並轉發給 IM 平台。
 /// </summary>
 public class MessageRouter
 {
     private readonly CopilotSessionManager _sessionManager;
     private readonly IMediaHandler _mediaHandler;
+    private readonly MediaHostingService _mediaHostingService;
     private readonly ILogger<MessageRouter> _logger;
 
     public MessageRouter(
         CopilotSessionManager sessionManager,
         IMediaHandler mediaHandler,
+        MediaHostingService mediaHostingService,
         ILogger<MessageRouter> logger)
     {
         _sessionManager = sessionManager;
         _mediaHandler = mediaHandler;
+        _mediaHostingService = mediaHostingService;
         _logger = logger;
     }
 
-    /// <summary>處理傳入的訊息並取得 AI 回應</summary>
-    public async Task<string> RouteMessageAsync(UnifiedMessage message, CancellationToken cancellationToken = default)
+    /// <summary>處理傳入的訊息並取得 AI 回應（含多媒體解析）</summary>
+    public async Task<RouterResponse> RouteMessageAsync(UnifiedMessage message, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("收到訊息 — 平台：{Platform}，使用者：{UserId}", message.Platform, message.UserId);
 
         // 處理指令
         if (message.IsCommand)
         {
-            return await HandleCommandAsync(message, cancellationToken);
+            var commandResult = await HandleCommandAsync(message, cancellationToken);
+            return new RouterResponse { Text = commandResult };
         }
 
         // 組合 Prompt（文字 + 多媒體描述）
@@ -42,18 +47,65 @@ public class MessageRouter
         // 發送到 Copilot 並取得回應
         try
         {
-            var response = await _sessionManager.SendMessageAsync(
+            var aiText = await _sessionManager.SendMessageAsync(
                 message.Platform,
                 message.UserId,
                 prompt,
                 cancellationToken);
+
+            // 解析 AI 回應中的多媒體內容
+            var response = AiResponseParser.Parse(aiText);
+
+            // 若 AI 回應僅有本機路徑而無嵌入媒體，自動要求 AI 重新提供
+            if (response.HasLocalFilePaths && !response.HasMedia)
+            {
+                _logger.LogWarning("AI 回應包含本機路徑但未嵌入多媒體，發送修正指令：{Paths}",
+                    string.Join(", ", response.LocalFilePaths));
+
+                var retryPrompt =
+                    "你剛才將檔案存在本機路徑，但我無法存取本機檔案系統。" +
+                    "請將該檔案的內容直接嵌入回覆中，使用 Markdown 圖片語法搭配 base64 data URI 格式：" +
+                    "![描述](data:image/png;base64,...)。" +
+                    "請直接提供圖片資料，不要再存成檔案。";
+
+                var retryText = await _sessionManager.SendMessageAsync(
+                    message.Platform,
+                    message.UserId,
+                    retryPrompt,
+                    cancellationToken);
+
+                response = AiResponseParser.Parse(retryText);
+
+                if (response.HasLocalFilePaths && !response.HasMedia)
+                {
+                    _logger.LogWarning("重試後仍未取得嵌入圖片");
+                }
+            }
+
+            // 將 Base64 多媒體暫存並產生公開 URL
+            foreach (var media in response.MediaContents)
+            {
+                if (!string.IsNullOrEmpty(media.Base64Data) && string.IsNullOrEmpty(media.SourceUrl))
+                {
+                    var hostedUrl = _mediaHostingService.HostMedia(media);
+                    if (hostedUrl != null)
+                    {
+                        media.SourceUrl = hostedUrl;
+                    }
+                }
+            }
+
+            if (response.HasMedia)
+            {
+                _logger.LogInformation("AI 回應包含 {Count} 個多媒體內容", response.MediaContents.Count);
+            }
 
             return response;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "訊息路由失敗 — 平台：{Platform}，使用者：{UserId}", message.Platform, message.UserId);
-            return "⚠️ AI 回應發生錯誤，請稍後再試。";
+            return new RouterResponse { Text = "⚠️ AI 回應發生錯誤，請稍後再試。" };
         }
     }
 

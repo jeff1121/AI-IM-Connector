@@ -4,15 +4,16 @@
 
 | 項目 | 值 |
 |------|-----|
-| **版本** | `0.1.2` |
+| **版本** | `0.2.1` |
 | **Docker Image** | `logicalis.azurecr.io/ai-connector/im-connector` |
-| **Tags** | `0.1.2`、`latest` |
+| **Tags** | `0.2.1`、`latest` |
 | **平台** | `linux/amd64`、`linux/arm64` |
 | **框架** | `.NET 8.0` |
 | **SDK** | `GitHub.Copilot.SDK 0.1.24-preview.0` |
 
 一個 .NET 8 WebAPI 服務，作為即時通訊平台（IM）與 AI Agent 之間的訊息轉送橋樑。
-使用者可以在 LINE、Telegram 等 IM 平台上以自然語言與後端 AI 對談，支援文字與多媒體訊息。
+使用者可以在 LINE、Telegram 等 IM 平台上以自然語言與後端 AI 對談，支援文字與多媒體訊息的雙向傳送。
+AI 生成的圖片會自動解析並直接傳送至 IM 平台，使用者無需手動下載轉傳。
 
 底層透過 [GitHub Copilot SDK](https://github.com/github/awesome-copilot/tree/main/cookbook/copilot-sdk)
 以 ACP（Agent Client Protocol）協定啟動 Copilot CLI 子行程，自動管理對話 Session。
@@ -20,34 +21,44 @@
 ## 🏗️ 系統架構
 
 ```
-┌─────────────┐                ┌──────────────────────────────────┐                ┌─────────────────┐
-│             │    Webhook     │        AI IM Connector           │   ACP (stdio)  │                 │
-│   LINE      │───────────────▶│                                  │───────────────▶│  Copilot CLI    │
-│   Telegram  │◀───────────────│   .NET 8 WebAPI                  │◀───────────────│  (子行程)       │
-│   (其他 IM) │    Reply API   │                                  │ Copilot SDK    │                 │
-│             │                │  ┌────────────┐  ┌────────────┐  │                └─────────────────┘
-└─────────────┘                │  │MessageRouter│  │ SessionMgr │  │
-                               │  └────────────┘  └────────────┘  │
-                               │  ┌────────────┐  ┌────────────┐  │
-                               │  │MediaHandler │  │ IM Adapters│  │
-                               │  └────────────┘  └────────────┘  │
-                               └──────────────────────────────────┘
+┌─────────────┐                ┌──────────────────────────────────────┐                ┌─────────────────┐
+│             │    Webhook     │          AI IM Connector              │   ACP (stdio)  │                 │
+│   LINE      │───────────────▶│                                      │───────────────▶│  Copilot CLI    │
+│   Telegram  │◀───────────────│   .NET 8 WebAPI                      │◀───────────────│  (子行程)       │
+│   (其他 IM) │  Reply/Push API│                                      │ Copilot SDK    │                 │
+│             │  ＋多媒體傳送  │  ┌────────────┐  ┌──────────────┐    │                └─────────────────┘
+└─────────────┘                │  │MessageRouter│  │ SessionMgr   │    │
+                               │  └────────────┘  │ ＋SystemPrompt│   │
+                               │  ┌────────────┐  └──────────────┘    │
+                               │  │ResponseParser│ ┌──────────────┐   │
+                               │  └────────────┘  │MediaHosting   │   │
+                               │  ┌────────────┐  └──────────────┘    │
+                               │  │IM Adapters │  ┌──────────────┐    │
+                               │  └────────────┘  │MediaHandler  │    │
+                               │                   └──────────────┘   │
+                               └──────────────────────────────────────┘
 ```
 
 ### 訊息流程
 
 1. 使用者在 IM 平台（LINE / Telegram）發送訊息
 2. IM 平台透過 Webhook 將訊息推送至本服務
-3. **MessageRouter** 解析訊息，組合 Prompt（含多媒體描述）
-4. **CopilotSessionManager** 管理使用者 Session，透過 Copilot SDK 發送至 AI
-5. AI 回應經由 IM 適配器回傳至使用者
+3. **CopilotSessionManager** 在新 Session 首次訊息前自動注入 **System Prompt**（指示 AI 以 base64 嵌入圖片）
+4. **MessageRouter** 解析訊息，組合 Prompt（含多媒體描述），透過 Copilot SDK 發送至 AI
+5. **AiResponseParser** 從 AI 文字回應中擷取多媒體內容（Markdown 圖片、Base64 Data URI、獨立圖片 URL）
+6. 若偵測到 AI 僅回傳本機路徑而未嵌入圖片，自動發送修正指令要求 AI 重新提供
+7. **MediaHostingService** 將 Base64 圖片暫存在記憶體（10 分鐘 TTL），產生公開 URL
+8. AI 回應的文字部分與多媒體分別透過 IM 適配器回傳至使用者
 
 ## ✨ 功能特色
 
 | 功能 | 說明 |
 |------|------|
 | 🌐 多平台支援 | LINE、Telegram（Teams、Google Chat、Slack 後續擴充） |
-| 🖼️ 多媒體訊息 | 支援圖片、影片、音訊、檔案（轉換為文字描述傳送至 AI） |
+| 🖼️ 多媒體雙向傳送 | 支援圖片、影片、音訊、檔案的接收與發送；AI 生成的圖片自動傳送至 IM |
+| 🎨 AI 繪圖直傳 | AI 生成的圖片（Base64/URL）自動解析、暫存、透過 IM Push API 直接傳送給使用者 |
+| 📝 System Prompt 注入 | 每個新 Session 自動注入系統提示詞，指示 AI 以 base64 嵌入圖片而非存檔 |
+| 🔄 本機路徑自動修正 | 偵測 AI 回應中的本機檔案路徑，自動發送修正指令要求重新提供嵌入圖片 |
 | 🤖 Copilot SDK | 透過 `GitHub.Copilot.SDK` 啟動 Copilot CLI 子行程，以 ACP 協定通訊 |
 | 💬 對話上下文 | SDK 原生 Session 管理，支援對話持久化與恢復，Stale Session 自動重建 |
 | ⚙️ 模型綁定 | 設定檔配置每個 IM 平台使用不同的 AI 模型 |
@@ -136,6 +147,9 @@ docker compose down
       "AiImConnector": "Debug"
     }
   },
+  "Connector": {
+    "PublicBaseUrl": ""
+  },
   "Im": {
     "Line": {
       "ChannelAccessToken": "",
@@ -155,12 +169,14 @@ docker compose down
       "Line": {
         "AgentName": "copilot-cli",
         "Model": "gpt-5",
-        "ResponseTimeoutSeconds": 120
+        "ResponseTimeoutSeconds": 120,
+        "SystemPrompt": "你正在透過即時通訊軟體與使用者對話。當使用者要求生成圖片時，必須使用 Markdown 圖片語法搭配 base64 data URI 格式嵌入回應中..."
       },
       "Telegram": {
         "AgentName": "gemini-cli",
         "Model": "claude-sonnet-4.5",
-        "ResponseTimeoutSeconds": 120
+        "ResponseTimeoutSeconds": 120,
+        "SystemPrompt": "..."
       }
     }
   }
@@ -177,9 +193,11 @@ docker compose down
 | `Im:Telegram` | `SecretToken` | Telegram Webhook 驗證用的 Secret Token（選填） | — |
 | `Acp` | `CliPath` | Copilot CLI 執行檔路徑（留空則由 SDK 自動下載） | `""` |
 | `Acp` | `ResponseTimeoutSeconds` | AI 回應的全域逾時秒數（建議 Docker 部署設為 `600`） | `120` |
+| `Connector` | `PublicBaseUrl` | 連接器公開 URL（供 Base64 多媒體暫存服務使用，例如 `https://yourdomain.com`） | `""` |
 | `AgentBindings:Bindings:{平台}` | `AgentName` | Agent 名稱（識別用） | — |
 | `AgentBindings:Bindings:{平台}` | `Model` | AI 模型名稱（如 `gpt-5`、`claude-sonnet-4.5`） | `gpt-5` |
 | `AgentBindings:Bindings:{平台}` | `ResponseTimeoutSeconds` | 該平台專屬的回應逾時秒數（優先於全域設定） | `120` |
+| `AgentBindings:Bindings:{平台}` | `SystemPrompt` | 系統提示詞（新 Session 首次訊息前注入，指示 AI 圖片輸出格式等行為） | `""` |
 
 ### 環境變數
 
@@ -199,8 +217,13 @@ Acp__ResponseTimeoutSeconds=120
 AgentBindings__Bindings__Line__AgentName=copilot-cli
 AgentBindings__Bindings__Line__Model=gpt-5
 AgentBindings__Bindings__Line__ResponseTimeoutSeconds=600
+AgentBindings__Bindings__Line__SystemPrompt=你正在透過即時通訊軟體與使用者對話...
 AgentBindings__Bindings__Telegram__Model=claude-sonnet-4.5
 AgentBindings__Bindings__Telegram__ResponseTimeoutSeconds=600
+AgentBindings__Bindings__Telegram__SystemPrompt=...
+
+# 連接器設定
+Connector__PublicBaseUrl=https://yourdomain.com
 ```
 
 ## 🔌 API 端點
@@ -209,6 +232,7 @@ AgentBindings__Bindings__Telegram__ResponseTimeoutSeconds=600
 |------|------|------|
 | `/api/webhook/line` | POST | LINE Messaging API Webhook 接收端點 |
 | `/api/webhook/telegram` | POST | Telegram Bot API Webhook 接收端點 |
+| `/api/media/{id}` | GET | 多媒體暫存檔案存取端點（供 IM 平台取得 AI 生成的圖片） |
 | `/health` | GET | 服務健康檢查（回傳 `{ status, timestamp }`） |
 | `/swagger` | GET | Swagger UI（僅 Development 環境） |
 
@@ -226,18 +250,21 @@ AI-IM-Connector/
 │   ├── Models/                             # 資料模型
 │   │   ├── UnifiedMessage.cs               #   統一訊息格式（跨平台抽象層）
 │   │   ├── MediaContent.cs                 #   多媒體內容模型
+│   │   ├── RouterResponse.cs               #   AI 回應結果（文字 + 多媒體 + 本機路徑偵測）
 │   │   └── SessionContext.cs               #   對話上下文
 │   ├── Services/                           # 核心服務
-│   │   ├── MessageRouter.cs                #   訊息路由（IM → AI → IM）
+│   │   ├── MessageRouter.cs                #   訊息路由（IM → AI → IM，含多媒體解析與本機路徑修正）
+│   │   ├── AiResponseParser.cs             #   AI 回應解析器（擷取 Markdown 圖片、Base64、URL、本機路徑）
 │   │   ├── Acp/                            #   Copilot SDK 封裝
 │   │   │   ├── IAcpClient.cs               #     ICopilotClientService 介面
 │   │   │   ├── AcpClient.cs                #     CopilotClientService 實作
-│   │   │   └── AcpSessionManager.cs        #     CopilotSessionManager 對話管理（含 stale session 自動重建）
+│   │   │   └── AcpSessionManager.cs        #     CopilotSessionManager（Session 管理 + System Prompt 注入）
 │   │   └── Media/                          #   多媒體處理
 │   │       ├── IMediaHandler.cs            #     多媒體處理介面
-│   │       └── MediaHandler.cs             #     下載、轉換、描述產生
+│   │       ├── MediaHandler.cs             #     下載、轉換、描述產生
+│   │       └── MediaHostingService.cs      #     Base64 多媒體暫存服務（10 分鐘 TTL）
 │   ├── Adapters/                           # IM 平台適配器
-│   │   ├── IImAdapter.cs                   #   適配器介面
+│   │   ├── IImAdapter.cs                   #   適配器介面（支援文字 + 多媒體回覆）
 │   │   ├── Line/                           #   LINE 適配器
 │   │   │   ├── LineAdapter.cs              #     LINE 訊息發送
 │   │   │   ├── LineWebhookController.cs    #     LINE Webhook 接收
@@ -251,7 +278,7 @@ AI-IM-Connector/
 │   └── Middleware/                         # 中介層
 │       ├── ExceptionHandlingMiddleware.cs  #   全域例外處理
 │       └── WebhookValidationMiddleware.cs  #   Webhook 請求驗證與日誌
-├── tests/AiImConnector.Tests/              # 單元測試（29 個測試）
+├── tests/AiImConnector.Tests/              # 單元測試（45 個測試）
 ├── Dockerfile                              # 多階段建置 Dockerfile
 ├── docker-compose.yml                      # Docker Compose 配置
 ├── Tasks.md                                # 計畫管理表
@@ -307,6 +334,9 @@ AI-IM-Connector/
 | Telegram 驗證 | 支援 Secret Token 驗證請求來源合法性 |
 | SSRF 防護 | MediaHandler 限制多媒體下載 URL 僅允許 IM 平台官方 API（白名單機制） |
 | 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏內部錯誤細節 |
+| System Prompt 注入 | 新 Session 首次訊息前自動注入系統提示詞，指示 AI 以 base64 data URI 嵌入圖片，避免存在本機路徑 |
+| 本機路徑偵測與自動修正 | 偵測 AI 回應中的本機檔案路徑，自動發送修正指令要求 AI 重新提供嵌入圖片 |
+| 多媒體暫存服務 | Base64 圖片暫存在記憶體（10 分鐘 TTL），產生公開 URL 供 IM 平台取用 |
 | 執行緒安全 | CopilotSessionManager 使用 per-user SemaphoreSlim 防止並行建立重複 Session |
 | Stale Session 重建 | 自動偵測 "Session not found" 錯誤，清除快取並重建新 Session（容器重啟恢復力） |
 | 逾時控制 | 支援 per-platform `ResponseTimeoutSeconds` 覆蓋全域逾時設定，避免長時間回應被截斷 |
@@ -317,8 +347,7 @@ AI-IM-Connector/
 ## � 變更紀錄
 
 | 版本 | 日期 | 說明 |
-|------|------|------|
-| 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
+|------|------|------|| 0.2.1 | 2026-02-12 | AI 繪圖多媒體直傳功能：System Prompt 注入、AI 回應多媒體解析（AiResponseParser）、本機路徑自動修正、Base64 圖片暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、45 個測試全通過 || 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
 | 0.1.1 | 2026-02-12 | 修復 .sln 專案路徑、stale session 偵測邏輯 |
 | 0.1.0 | 2026-02-12 | 程式碼審查 & 安全性掃描：修復 7 項安全漏洞，更新文件與註解 |
 | 0.0.1 | 2026-02-11 | 初始版本：LINE + Telegram 雙平台支援、Copilot SDK 整合、完整測試覆蓋 |

@@ -1,6 +1,17 @@
 namespace AiImConnector.Configuration;
 
 /// <summary>
+/// 連接器全域設定
+/// </summary>
+public class ConnectorSettings
+{
+    public const string SectionName = "Connector";
+
+    /// <summary>連接器的公開 URL（供 IM 平台存取多媒體，例如 https://yourdomain.com）</summary>
+    public string PublicBaseUrl { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// LINE 平台設定
 /// </summary>
 public class LineSettings

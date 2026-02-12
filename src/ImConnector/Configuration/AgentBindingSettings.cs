@@ -24,4 +24,10 @@ public class AgentBinding
 
     /// <summary>回應逾時時間（秒）</summary>
     public int ResponseTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// 系統提示詞 — 在每個新 Session 的第一則訊息前注入，
+    /// 用於指示 AI Agent 行為（例如多媒體輸出格式）。
+    /// </summary>
+    public string SystemPrompt { get; set; } = string.Empty;
 }

@@ -23,6 +23,9 @@ public class CopilotSessionManager
     /// <summary>建立 Session 時的鎖定物件，防止同一使用者並行建立多個 Session</summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
 
+    /// <summary>已注入 System Prompt 的 Session（避免重複注入）</summary>
+    private readonly ConcurrentDictionary<string, bool> _initializedSessions = new();
+
     public CopilotSessionManager(
         ICopilotClientService clientService,
         IOptions<AgentBindingSettings> bindingSettings,
@@ -80,7 +83,7 @@ public class CopilotSessionManager
         }
     }
 
-    /// <summary>發送訊息到 Copilot 並等待回應（含 stale session 自動重建）</summary>
+    /// <summary>發送訊息到 Copilot 並等待回應（含 stale session 自動重建、首次注入 System Prompt）</summary>
     public async Task<string> SendMessageAsync(
         string platform,
         string userId,
@@ -92,6 +95,10 @@ public class CopilotSessionManager
         var timeout = binding != null
             ? TimeSpan.FromSeconds(binding.ResponseTimeoutSeconds)
             : TimeSpan.FromSeconds(_acpSettings.ResponseTimeoutSeconds);
+
+        // 在新 Session 的第一則訊息前注入 System Prompt
+        var userKey = BuildSessionId(platform, userId);
+        prompt = PrependSystemPromptIfNeeded(userKey, binding, prompt);
 
         _logger.LogDebug("發送 prompt 到 Session {SessionId}：{Prompt}",
             session.SessionId, prompt.Length > 100 ? prompt[..100] + "..." : prompt);
@@ -109,8 +116,8 @@ public class CopilotSessionManager
         {
             // Session 已失效（例如容器重啟後 Copilot CLI 子程序重新啟動），清除快取並重建
             _logger.LogWarning("Session {SessionId} 已失效，清除快取並重建新 Session", session.SessionId);
-            var userKey = BuildSessionId(platform, userId);
             _sessions.TryRemove(userKey, out _);
+            _initializedSessions.TryRemove(userKey, out _);
 
             session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
             _logger.LogInformation("已重建 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
@@ -144,7 +151,26 @@ public class CopilotSessionManager
         {
             await session.DisposeAsync();
         }
+        _initializedSessions.TryRemove(userKey, out _);
         _logger.LogInformation("已清除 Session：{UserKey}", userKey);
+    }
+
+    /// <summary>在新 Session 首次發送時，在 Prompt 前加入 System Prompt</summary>
+    private string PrependSystemPromptIfNeeded(string userKey, AgentBinding? binding, string prompt)
+    {
+        if (_initializedSessions.ContainsKey(userKey))
+            return prompt;
+
+        var systemPrompt = binding?.SystemPrompt;
+        if (string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            _initializedSessions.TryAdd(userKey, true);
+            return prompt;
+        }
+
+        _initializedSessions.TryAdd(userKey, true);
+        _logger.LogDebug("注入 System Prompt 到 Session {UserKey}", userKey);
+        return $"{systemPrompt}\n\n---\n\n{prompt}";
     }
 
     /// <summary>產生使用者 Key</summary>
