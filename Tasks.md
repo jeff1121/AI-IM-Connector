@@ -1,6 +1,6 @@
 # 📋 AI IM Connector — 計畫管理表
 
-> 最後更新：2026-02-12
+> 最後更新：2026-02-12（v0.1.2）
 
 ## 📊 總覽
 
@@ -165,3 +165,5 @@
 | 2026-02-10 | 重構 ACP 層為 GitHub Copilot SDK，移除舊 HTTP+SSE 客戶端與自建 Session 管理 |
 | 2026-02-11 | 重構為官方 Copilot SDK（CliUrl 連線外部 server），端對端測試通過 |
 | 2026-02-12 | **程式碼審查 & 安全性掃描**：修復 7 項安全漏洞與程式品質問題，更新所有文件與註解 |
+| 2026-02-12 | **v0.1.1**：修復 .sln 專案路徑（`src\AiImConnector\` → `src\ImConnector\`）、stale session 偵測與自動重建邏輯 |
+| 2026-02-12 | **v0.1.2**：修復 per-platform `ResponseTimeoutSeconds` 未正確覆蓋全域設定的問題（預設 120s → 600s），docker-compose.yml 新增各平台獨立逾時設定 |

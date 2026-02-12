@@ -1,6 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# AI IM Connector — 建置並推送 Docker Image 至 Azure ACR
+# AI IM Connector — 建置並推送多平台 Docker Image 至 Azure ACR
+# 支援平台：linux/amd64、linux/arm64
 # 使用方式：./publish.sh
 # =============================================================================
 
@@ -20,41 +21,50 @@ fi
 : "${ACR_REGISTRY:?請在 .env 設定 ACR_REGISTRY（例如 logicalis.azurecr.io）}"
 : "${IMAGE_VERSION:?請在 .env 設定 IMAGE_VERSION（例如 1.0.0）}"
 
-IMAGE_NAME="${ACR_REGISTRY}/ai-connector/ai-im-connector"
-IMAGE_TAG="${IMAGE_NAME}:${IMAGE_VERSION}"
-IMAGE_LATEST="${IMAGE_NAME}:latest"
+IMAGE_NAME="${ACR_REGISTRY}/ai-connector/im-connector"
+PLATFORMS="linux/amd64,linux/arm64"
 
-echo "============================================="
-echo "📦 建置 Docker Image"
-echo "   Image: ${IMAGE_TAG}"
-echo "============================================="
-
-# 建置 Image
-docker compose -f docker-compose.build.yml build
-
-echo ""
 echo "============================================="
 echo "🔑 登入 Azure ACR: ${ACR_REGISTRY}"
 echo "============================================="
 
-# 登入 ACR
 az acr login --name "${ACR_REGISTRY%%.*}"
 
 echo ""
 echo "============================================="
-echo "🚀 推送 Image 至 ACR"
+echo "📦 建置並推送多平台 Docker Image"
+echo "   Image: ${IMAGE_NAME}"
+echo "   Tags:  ${IMAGE_VERSION}, latest"
+echo "   Platforms: ${PLATFORMS}"
 echo "============================================="
 
-# 推送版本標籤
-docker push "${IMAGE_TAG}"
+# 確保 buildx builder 存在
+BUILDER_NAME="multiplatform"
+if ! docker buildx inspect "${BUILDER_NAME}" >/dev/null 2>&1; then
+    echo "🔧 建立 buildx builder: ${BUILDER_NAME}"
+    docker buildx create --name "${BUILDER_NAME}" --use --driver docker-container
+else
+    docker buildx use "${BUILDER_NAME}"
+fi
 
-# 同時標記並推送 latest
-docker tag "${IMAGE_TAG}" "${IMAGE_LATEST}"
-docker push "${IMAGE_LATEST}"
+# 切換至專案根目錄（確保 buildx context 路徑正確）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}"
+
+# 多平台建置並推送（同時標記版本號與 latest）
+docker buildx build \
+    --platform "${PLATFORMS}" \
+    -f docker/Dockerfile \
+    -t "${IMAGE_NAME}:${IMAGE_VERSION}" \
+    -t "${IMAGE_NAME}:latest" \
+    --push \
+    .
 
 echo ""
 echo "============================================="
 echo "✅ 完成！"
-echo "   ${IMAGE_TAG}"
-echo "   ${IMAGE_LATEST}"
+echo "   ${IMAGE_NAME}:${IMAGE_VERSION}"
+echo "   ${IMAGE_NAME}:latest"
+echo "   平台: ${PLATFORMS}"
 echo "============================================="

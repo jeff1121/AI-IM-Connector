@@ -3,12 +3,12 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # 複製 csproj 並還原套件（利用 Docker 快取層）
-COPY src/AiImConnector/AiImConnector.csproj src/AiImConnector/
-RUN dotnet restore src/AiImConnector/AiImConnector.csproj
+COPY src/ImConnector/AiImConnector.csproj src/ImConnector/
+RUN dotnet restore src/ImConnector/AiImConnector.csproj
 
 # 複製所有原始碼並建置
 COPY src/ src/
-RUN dotnet publish src/AiImConnector/AiImConnector.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish src/ImConnector/AiImConnector.csproj -c Release -o /app/publish --no-restore
 
 # 執行階段
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime

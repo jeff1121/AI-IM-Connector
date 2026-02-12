@@ -2,6 +2,15 @@
 
 > 🤖 即時通訊平台 × AI Agent 訊息轉送服務
 
+| 項目 | 值 |
+|------|-----|
+| **版本** | `0.1.2` |
+| **Docker Image** | `logicalis.azurecr.io/ai-connector/im-connector` |
+| **Tags** | `0.1.2`、`latest` |
+| **平台** | `linux/amd64`、`linux/arm64` |
+| **框架** | `.NET 8.0` |
+| **SDK** | `GitHub.Copilot.SDK 0.1.24-preview.0` |
+
 一個 .NET 8 WebAPI 服務，作為即時通訊平台（IM）與 AI Agent 之間的訊息轉送橋樑。
 使用者可以在 LINE、Telegram 等 IM 平台上以自然語言與後端 AI 對談，支援文字與多媒體訊息。
 
@@ -40,7 +49,7 @@
 | 🌐 多平台支援 | LINE、Telegram（Teams、Google Chat、Slack 後續擴充） |
 | 🖼️ 多媒體訊息 | 支援圖片、影片、音訊、檔案（轉換為文字描述傳送至 AI） |
 | 🤖 Copilot SDK | 透過 `GitHub.Copilot.SDK` 啟動 Copilot CLI 子行程，以 ACP 協定通訊 |
-| 💬 對話上下文 | SDK 原生 Session 管理，支援對話持久化與恢復 |
+| 💬 對話上下文 | SDK 原生 Session 管理，支援對話持久化與恢復，Stale Session 自動重建 |
 | ⚙️ 模型綁定 | 設定檔配置每個 IM 平台使用不同的 AI 模型 |
 | 🎯 指令系統 | `/clear`（清除對話）、`/help`（說明）、`/status`（連線狀態） |
 | 🐳 Docker 部署 | 多階段建置的容器化部署 |
@@ -167,10 +176,10 @@ docker compose down
 | `Im:Telegram` | `BotToken` | Telegram Bot API Token | — |
 | `Im:Telegram` | `SecretToken` | Telegram Webhook 驗證用的 Secret Token（選填） | — |
 | `Acp` | `CliPath` | Copilot CLI 執行檔路徑（留空則由 SDK 自動下載） | `""` |
-| `Acp` | `ResponseTimeoutSeconds` | AI 回應的全域逾時秒數 | `120` |
+| `Acp` | `ResponseTimeoutSeconds` | AI 回應的全域逾時秒數（建議 Docker 部署設為 `600`） | `120` |
 | `AgentBindings:Bindings:{平台}` | `AgentName` | Agent 名稱（識別用） | — |
 | `AgentBindings:Bindings:{平台}` | `Model` | AI 模型名稱（如 `gpt-5`、`claude-sonnet-4.5`） | `gpt-5` |
-| `AgentBindings:Bindings:{平台}` | `ResponseTimeoutSeconds` | 該平台專屬的回應逾時秒數 | `120` |
+| `AgentBindings:Bindings:{平台}` | `ResponseTimeoutSeconds` | 該平台專屬的回應逾時秒數（優先於全域設定） | `120` |
 
 ### 環境變數
 
@@ -189,7 +198,9 @@ Acp__ResponseTimeoutSeconds=120
 # Agent 綁定
 AgentBindings__Bindings__Line__AgentName=copilot-cli
 AgentBindings__Bindings__Line__Model=gpt-5
+AgentBindings__Bindings__Line__ResponseTimeoutSeconds=600
 AgentBindings__Bindings__Telegram__Model=claude-sonnet-4.5
+AgentBindings__Bindings__Telegram__ResponseTimeoutSeconds=600
 ```
 
 ## 🔌 API 端點
@@ -221,7 +232,7 @@ AI-IM-Connector/
 │   │   ├── Acp/                            #   Copilot SDK 封裝
 │   │   │   ├── IAcpClient.cs               #     ICopilotClientService 介面
 │   │   │   ├── AcpClient.cs                #     CopilotClientService 實作
-│   │   │   └── AcpSessionManager.cs        #     CopilotSessionManager 對話管理
+│   │   │   └── AcpSessionManager.cs        #     CopilotSessionManager 對話管理（含 stale session 自動重建）
 │   │   └── Media/                          #   多媒體處理
 │   │       ├── IMediaHandler.cs            #     多媒體處理介面
 │   │       └── MediaHandler.cs             #     下載、轉換、描述產生
@@ -297,10 +308,21 @@ AI-IM-Connector/
 | SSRF 防護 | MediaHandler 限制多媒體下載 URL 僅允許 IM 平台官方 API（白名單機制） |
 | 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏內部錯誤細節 |
 | 執行緒安全 | CopilotSessionManager 使用 per-user SemaphoreSlim 防止並行建立重複 Session |
+| Stale Session 重建 | 自動偵測 "Session not found" 錯誤，清除快取並重建新 Session（容器重啟恢復力） |
+| 逾時控制 | 支援 per-platform `ResponseTimeoutSeconds` 覆蓋全域逾時設定，避免長時間回應被截斷 |
 | 輸入驗證 | Telegram ChatId 使用安全的 TryParse 解析，避免格式異常 |
 | 容器安全 | Docker 以非 root 使用者執行 |
 | HTTPS 強制 | Caddy 反向代理自動管理 Let's Encrypt 憑證 |
 
-## 📄 授權
+## � 變更紀錄
+
+| 版本 | 日期 | 說明 |
+|------|------|------|
+| 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
+| 0.1.1 | 2026-02-12 | 修復 .sln 專案路徑、stale session 偵測邏輯 |
+| 0.1.0 | 2026-02-12 | 程式碼審查 & 安全性掃描：修復 7 項安全漏洞，更新文件與註解 |
+| 0.0.1 | 2026-02-11 | 初始版本：LINE + Telegram 雙平台支援、Copilot SDK 整合、完整測試覆蓋 |
+
+## �📄 授權
 
 MIT License

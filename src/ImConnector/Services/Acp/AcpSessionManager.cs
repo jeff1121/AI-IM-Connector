@@ -80,7 +80,7 @@ public class CopilotSessionManager
         }
     }
 
-    /// <summary>發送訊息到 Copilot 並等待回應</summary>
+    /// <summary>發送訊息到 Copilot 並等待回應（含 stale session 自動重建）</summary>
     public async Task<string> SendMessageAsync(
         string platform,
         string userId,
@@ -96,12 +96,44 @@ public class CopilotSessionManager
         _logger.LogDebug("發送 prompt 到 Session {SessionId}：{Prompt}",
             session.SessionId, prompt.Length > 100 ? prompt[..100] + "..." : prompt);
 
-        // 使用 SDK 的 SendAndWaitAsync（含逾時控制）
-        var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
+        try
+        {
+            // 使用 SDK 的 SendAndWaitAsync（含逾時控制）
+            var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
 
-        var content = response?.Data?.Content ?? "";
-        _logger.LogDebug("收到完整回應（{Length} 字元）", content.Length);
-        return content;
+            var content = response?.Data?.Content ?? "";
+            _logger.LogDebug("收到完整回應（{Length} 字元）", content.Length);
+            return content;
+        }
+        catch (Exception ex) when (IsSessionNotFound(ex))
+        {
+            // Session 已失效（例如容器重啟後 Copilot CLI 子程序重新啟動），清除快取並重建
+            _logger.LogWarning("Session {SessionId} 已失效，清除快取並重建新 Session", session.SessionId);
+            var userKey = BuildSessionId(platform, userId);
+            _sessions.TryRemove(userKey, out _);
+
+            session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
+            _logger.LogInformation("已重建 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
+
+            var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
+            var content = response?.Data?.Content ?? "";
+            _logger.LogDebug("重建後收到回應（{Length} 字元）", content.Length);
+            return content;
+        }
+    }
+
+    /// <summary>判斷例外是否為 Session not found 錯誤</summary>
+    private static bool IsSessionNotFound(Exception ex)
+    {
+        // 檢查整個例外鏈（含 InnerException）是否包含 "Session not found"
+        var current = ex;
+        while (current != null)
+        {
+            if (current.Message.Contains("Session not found", StringComparison.OrdinalIgnoreCase))
+                return true;
+            current = current.InnerException;
+        }
+        return false;
     }
 
     /// <summary>清除使用者的 Session</summary>

@@ -24,8 +24,10 @@ services:
       # Agent 綁定
       - AgentBindings__Bindings__Line__AgentName=${LINE_AGENT_NAME}
       - AgentBindings__Bindings__Line__Model=${LINE_MODEL}
+      - AgentBindings__Bindings__Line__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT}
       - AgentBindings__Bindings__Telegram__AgentName=${TELEGRAM_AGENT_NAME}
       - AgentBindings__Bindings__Telegram__Model=${TELEGRAM_MODEL}
+      - AgentBindings__Bindings__Telegram__ResponseTimeoutSeconds=${RESPONSE_TIMEOUT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

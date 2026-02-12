@@ -1,12 +1,15 @@
 # =============================================================================
-# AI IM Connector — 建置 Docker Image
-# 使用方式：docker compose -f docker-compose.build.yml build
+# AI IM Connector — 建置 Docker Image（支援 amd64 / arm64 多平台）
+# 建置：docker compose -f docker-compose.build.yml build
 # 推送至 ACR：./publish.sh
 # =============================================================================
 
 services:
-  ai-im-connector:
+  im-connector:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64
     image: ${ACR_REGISTRY}/ai-connector/im-connector:${IMAGE_VERSION}
