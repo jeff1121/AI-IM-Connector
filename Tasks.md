@@ -1,6 +1,6 @@
 # 📋 AI IM Connector — 計畫管理表
 
-> 最後更新：2026-02-12（v0.2.1）
+> 最後更新：2026-02-12（v0.2.2）
 
 ## 📊 總覽
 
@@ -18,6 +18,7 @@
 | 第十階段 | Docker 部署 | ✅ 完成 | 3/3 |
 | 第十一階段 | 文件與測試 | ✅ 完成 | 2/2 |
 | 第十二階段 | AI 多媒體直傳（繪圖自動傳送） | ✅ 完成 | 6/6 |
+| 第十三階段 | 多媒體傳送改為臨時 URL 文字連結 | ✅ 完成 | 1/1 |
 | 後續擴充 | Teams / Google Chat / Slack 等 | 📌 待規劃 | 0/8 |
 
 ---
@@ -117,7 +118,13 @@
 - [x] **12.3** 實作 `MediaHostingService`（Base64 多媒體記憶體暫存、產生公開 URL、10 分鐘 TTL + 自動清理）
 - [x] **12.4** 實作 `MediaController`（`GET /api/media/{id}` 端點，供 IM 平台取得檔案）
 - [x] **12.5** 擴充 `AgentBinding` 設定（新增 `SystemPrompt` 欄位）、`CopilotSessionManager`（新 Session 首次注入 System Prompt、stale session 重建時清除已注入標記）
-- [x] **12.6** 更新 `MessageRouter`（回傳 `RouterResponse`、本機路徑偵測自動重試、Base64 暫存轉 URL）、兩個 Webhook Controller（分離文字 + 多媒體回應）
+- [x] **12.6** 更新 `MessageRouter`（回傳 `RouterResponse`、本機路徑偵測自動重試、Base64 暫存轉 URL、多媒體 URL 附加於文字回應）、兩個 Webhook Controller（分離文字 + 多媒體回應）
+
+---
+
+## 第十三階段：多媒體傳送改為臨時 URL 文字連結
+
+- [x] **13.1** 更新 `MessageRouter` — 多媒體不再透過 IM 原生推送 API 傳送，改將暫存 URL 附加於文字回應，使用者點擊連結即可檢視圖片，相容性更高
 
 ---
 
@@ -179,4 +186,5 @@
 | 2026-02-11 | 重構為官方 Copilot SDK（CliUrl 連線外部 server），端對端測試通過 |
 | 2026-02-12 | **程式碼審查 & 安全性掃描**：修復 7 項安全漏洞與程式品質問題，更新所有文件與註解 |
 | 2026-02-12 | **v0.1.1**：修復 .sln 專案路徑（`src\AiImConnector\` → `src\ImConnector\`）、stale session 偵測與自動重建邏輯 |
-| 2026-02-12 | **v0.1.2**：修復 per-platform `ResponseTimeoutSeconds` 未正確覆蓋全域設定的問題（預設 120s → 600s），docker-compose.yml 新增各平台獨立逾時設定 || 2026-02-12 | **v0.2.1**：AI 多媒體直傳功能 — 新增 AI 回應多媒體解析器（AiResponseParser）、本機路徑偵測與自動修正、System Prompt 注入、Base64 多媒體暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、ConnectorSettings 設定、Webhook Controller 擴充支援多媒體回應、45 個測試全通過 |
+| 2026-02-12 | **v0.1.2**：修復 per-platform `ResponseTimeoutSeconds` 未正確覆蓋全域設定的問題（預設 120s → 600s），docker-compose.yml 新增各平台獨立逾時設定 || 2026-02-12 | **v0.2.2**：多媒體傳送改為臨時 URL 文字連結 — 不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應，使用者點擊連結即可檢視圖片 |
+| 2026-02-12 | **v0.2.1**：AI 多媒體直傳功能 — 新增 AI 回應多媒體解析器（AiResponseParser）、本機路徑偵測與自動修正、System Prompt 注入、Base64 多媒體暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、ConnectorSettings 設定、Webhook Controller 擴充支援多媒體回應、45 個測試全通過 |

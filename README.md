@@ -4,9 +4,9 @@
 
 | 項目 | 值 |
 |------|-----|
-| **版本** | `0.2.1` |
+| **版本** | `0.2.2` |
 | **Docker Image** | `logicalis.azurecr.io/ai-connector/im-connector` |
-| **Tags** | `0.2.1`、`latest` |
+| **Tags** | `0.2.2`、`latest` |
 | **平台** | `linux/amd64`、`linux/arm64` |
 | **框架** | `.NET 8.0` |
 | **SDK** | `GitHub.Copilot.SDK 0.1.24-preview.0` |
@@ -48,7 +48,7 @@ AI 生成的圖片會自動解析並直接傳送至 IM 平台，使用者無需�
 5. **AiResponseParser** 從 AI 文字回應中擷取多媒體內容（Markdown 圖片、Base64 Data URI、獨立圖片 URL）
 6. 若偵測到 AI 僅回傳本機路徑而未嵌入圖片，自動發送修正指令要求 AI 重新提供
 7. **MediaHostingService** 將 Base64 圖片暫存在記憶體（10 分鐘 TTL），產生公開 URL
-8. AI 回應的文字部分與多媒體分別透過 IM 適配器回傳至使用者
+8. 多媒體臨時 URL 附加於文字回應中，使用者在 IM 點擊連結即可直接檢視圖片（不依賴 IM 平台原生多媒體推送 API）
 
 ## ✨ 功能特色
 
@@ -56,7 +56,7 @@ AI 生成的圖片會自動解析並直接傳送至 IM 平台，使用者無需�
 |------|------|
 | 🌐 多平台支援 | LINE、Telegram（Teams、Google Chat、Slack 後續擴充） |
 | 🖼️ 多媒體雙向傳送 | 支援圖片、影片、音訊、檔案的接收與發送；AI 生成的圖片自動傳送至 IM |
-| 🎨 AI 繪圖直傳 | AI 生成的圖片（Base64/URL）自動解析、暫存、透過 IM Push API 直接傳送給使用者 |
+| 🎨 AI 繪圖直傳 | AI 生成的圖片（Base64/URL）自動解析、暫存為臨時 URL，附加於文字回應中供使用者點擊檢視 |
 | 📝 System Prompt 注入 | 每個新 Session 自動注入系統提示詞，指示 AI 以 base64 嵌入圖片而非存檔 |
 | 🔄 本機路徑自動修正 | 偵測 AI 回應中的本機檔案路徑，自動發送修正指令要求重新提供嵌入圖片 |
 | 🤖 Copilot SDK | 透過 `GitHub.Copilot.SDK` 啟動 Copilot CLI 子行程，以 ACP 協定通訊 |
@@ -232,7 +232,7 @@ Connector__PublicBaseUrl=https://yourdomain.com
 |------|------|------|
 | `/api/webhook/line` | POST | LINE Messaging API Webhook 接收端點 |
 | `/api/webhook/telegram` | POST | Telegram Bot API Webhook 接收端點 |
-| `/api/media/{id}` | GET | 多媒體暫存檔案存取端點（供 IM 平台取得 AI 生成的圖片） |
+| `/api/media/{id}` | GET | 多媒體暫存檔案存取端點（使用者點擊臨時 URL 即可取得 AI 生成的圖片） |
 | `/health` | GET | 服務健康檢查（回傳 `{ status, timestamp }`） |
 | `/swagger` | GET | Swagger UI（僅 Development 環境） |
 
@@ -336,7 +336,7 @@ AI-IM-Connector/
 | 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏內部錯誤細節 |
 | System Prompt 注入 | 新 Session 首次訊息前自動注入系統提示詞，指示 AI 以 base64 data URI 嵌入圖片，避免存在本機路徑 |
 | 本機路徑偵測與自動修正 | 偵測 AI 回應中的本機檔案路徑，自動發送修正指令要求 AI 重新提供嵌入圖片 |
-| 多媒體暫存服務 | Base64 圖片暫存在記憶體（10 分鐘 TTL），產生公開 URL 供 IM 平台取用 |
+| 多媒體暫存服務 | Base64 圖片暫存在記憶體（10 分鐘 TTL），產生臨時 URL 附加於文字回應中供使用者點擊 |
 | 執行緒安全 | CopilotSessionManager 使用 per-user SemaphoreSlim 防止並行建立重複 Session |
 | Stale Session 重建 | 自動偵測 "Session not found" 錯誤，清除快取並重建新 Session（容器重啟恢復力） |
 | 逾時控制 | 支援 per-platform `ResponseTimeoutSeconds` 覆蓋全域逾時設定，避免長時間回應被截斷 |
@@ -347,7 +347,8 @@ AI-IM-Connector/
 ## � 變更紀錄
 
 | 版本 | 日期 | 說明 |
-|------|------|------|| 0.2.1 | 2026-02-12 | AI 繪圖多媒體直傳功能：System Prompt 注入、AI 回應多媒體解析（AiResponseParser）、本機路徑自動修正、Base64 圖片暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、45 個測試全通過 || 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
+|------|------|------|| 0.2.2 | 2026-02-12 | 多媒體傳送改為臨時 URL 文字連結：不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應，使用者點擊連結即可檢視圖片，相容性更高 |
+| 0.2.1 | 2026-02-12 | AI 繪圖多媒體直傳功能：System Prompt 注入、AI 回應多媒體解析（AiResponseParser）、本機路徑自動修正、Base64 圖片暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、45 個測試全通過 || 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
 | 0.1.1 | 2026-02-12 | 修復 .sln 專案路徑、stale session 偵測邏輯 |
 | 0.1.0 | 2026-02-12 | 程式碼審查 & 安全性掃描：修復 7 項安全漏洞，更新文件與註解 |
 | 0.0.1 | 2026-02-11 | 初始版本：LINE + Telegram 雙平台支援、Copilot SDK 整合、完整測試覆蓋 |

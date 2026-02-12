@@ -8,7 +8,7 @@ namespace AiImConnector.Services;
 /// <summary>
 /// 訊息路由服務 — 負責將 IM 訊息轉發到 Copilot SDK，並將回應轉回 IM。
 /// 處理使用者指令（/clear、/help、/status）及多媒體內容描述的 Prompt 組合。
-/// 支援解析 AI 回應中的多媒體內容（圖片 URL、Base64）並轉發給 IM 平台。
+/// 支援解析 AI 回應中的多媒體內容（圖片 URL、Base64），暫存為臨時 URL 附加於文字回應中。
 /// </summary>
 public class MessageRouter
 {
@@ -95,9 +95,25 @@ public class MessageRouter
                 }
             }
 
-            if (response.HasMedia)
+            // 將多媒體 URL 附加到文字回應中，使用者點擊連結即可取得圖片
+            // 不依賴 IM 平台的多媒體推送 API，相容性更高
+            var hostedMediaLinks = response.MediaContents
+                .Where(m => !string.IsNullOrEmpty(m.SourceUrl))
+                .ToList();
+
+            if (hostedMediaLinks.Count > 0)
             {
-                _logger.LogInformation("AI 回應包含 {Count} 個多媒體內容", response.MediaContents.Count);
+                _logger.LogInformation("AI 回應包含 {Count} 個多媒體內容，將以臨時 URL 附加於文字回應", hostedMediaLinks.Count);
+
+                var linkLines = hostedMediaLinks
+                    .Select(m => $"🖼️ {m.FileName ?? "圖片"}：{m.SourceUrl}");
+
+                response.Text = string.IsNullOrEmpty(response.Text)
+                    ? string.Join("\n", linkLines)
+                    : response.Text + "\n\n" + string.Join("\n", linkLines);
+
+                // 已轉為文字 URL，清除 MediaContents 避免 Controller 重複推送
+                response.MediaContents.Clear();
             }
 
             return response;
