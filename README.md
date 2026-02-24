@@ -4,9 +4,9 @@
 
 | 項目 | 值 |
 |------|-----|
-| **版本** | `0.2.2` |
-| **Docker Image** | `logicalis.azurecr.io/ai-connector/im-connector` |
-| **Tags** | `0.2.2`、`latest` |
+| **版本** | `0.2.4` |
+| **Docker Image** | `yourregistry.azurecr.io/ai-connector/im-connector` |
+| **Tags** | `0.2.4`、`latest` |
 | **平台** | `linux/amd64`、`linux/arm64` |
 | **框架** | `.NET 8.0` |
 | **SDK** | `GitHub.Copilot.SDK 0.1.24-preview.0` |
@@ -88,7 +88,7 @@ cd AI-IM-Connector
 dotnet restore
 
 # 3. 設定密鑰（使用 User Secrets，避免將敏感資訊寫入程式碼）
-cd src/AiImConnector
+cd src/ImConnector
 dotnet user-secrets init
 dotnet user-secrets set "Im:Line:ChannelAccessToken" "YOUR_LINE_TOKEN"
 dotnet user-secrets set "Im:Line:ChannelSecret" "YOUR_LINE_SECRET"
@@ -190,7 +190,7 @@ docker compose down
 | `Im:Line` | `ChannelAccessToken` | LINE Messaging API 的 Channel Access Token | — |
 | `Im:Line` | `ChannelSecret` | LINE Webhook 簽名驗證用的 Channel Secret | — |
 | `Im:Telegram` | `BotToken` | Telegram Bot API Token | — |
-| `Im:Telegram` | `SecretToken` | Telegram Webhook 驗證用的 Secret Token（選填） | — |
+| `Im:Telegram` | `SecretToken` | Telegram Webhook 驗證用的 Secret Token（**必須設定**，未設定時拒絕所有請求） | — |
 | `Acp` | `CliPath` | Copilot CLI 執行檔路徑（留空則由 SDK 自動下載） | `""` |
 | `Acp` | `ResponseTimeoutSeconds` | AI 回應的全域逾時秒數（建議 Docker 部署設為 `600`） | `120` |
 | `Connector` | `PublicBaseUrl` | 連接器公開 URL（供 Base64 多媒體暫存服務使用，例如 `https://yourdomain.com`） | `""` |
@@ -240,7 +240,7 @@ Connector__PublicBaseUrl=https://yourdomain.com
 
 ```
 AI-IM-Connector/
-├── src/AiImConnector/
+├── src/ImConnector/
 │   ├── Program.cs                          # 應用程式進入點 + DI 註冊
 │   ├── appsettings.json                    # 設定檔
 │   ├── Configuration/                      # 設定模型
@@ -261,26 +261,34 @@ AI-IM-Connector/
 │   │   │   └── AcpSessionManager.cs        #     CopilotSessionManager（Session 管理 + System Prompt 注入）
 │   │   └── Media/                          #   多媒體處理
 │   │       ├── IMediaHandler.cs            #     多媒體處理介面
-│   │       ├── MediaHandler.cs             #     下載、轉換、描述產生
-│   │       └── MediaHostingService.cs      #     Base64 多媒體暫存服務（10 分鐘 TTL）
+│   │       ├── MediaHandler.cs             #     下載、轉換、描述產生（含 SSRF 防護與檔案大小限制）
+│   │       └── MediaHostingService.cs      #     Base64 多媒體暫存服務（10 分鐘 TTL、容量上限）
 │   ├── Adapters/                           # IM 平台適配器
 │   │   ├── IImAdapter.cs                   #   適配器介面（支援文字 + 多媒體回覆）
 │   │   ├── Line/                           #   LINE 適配器
 │   │   │   ├── LineAdapter.cs              #     LINE 訊息發送
-│   │   │   ├── LineWebhookController.cs    #     LINE Webhook 接收
+│   │   │   ├── LineWebhookController.cs    #     LINE Webhook 接收（HMAC-SHA256 簽名驗證）
 │   │   │   └── LineMessageConverter.cs     #     LINE 訊息格式轉換
 │   │   ├── Telegram/                       #   Telegram 適配器
 │   │   │   ├── TelegramAdapter.cs          #     Telegram 訊息發送
-│   │   │   ├── TelegramWebhookController.cs#     Telegram Webhook 接收
+│   │   │   ├── TelegramWebhookController.cs#     Telegram Webhook 接收（常數時間 Token 驗證）
 │   │   │   └── TelegramMessageConverter.cs #     Telegram 訊息格式轉換
 │   │   └── _Template/                      #   擴充用模板（新增平台參考）
 │   │       └── README.md
 │   └── Middleware/                         # 中介層
-│       ├── ExceptionHandlingMiddleware.cs  #   全域例外處理
+│       ├── ExceptionHandlingMiddleware.cs  #   全域例外處理（Production 隱藏所有內部細節）
 │       └── WebhookValidationMiddleware.cs  #   Webhook 請求驗證與日誌
-├── tests/AiImConnector.Tests/              # 單元測試（45 個測試）
-├── Dockerfile                              # 多階段建置 Dockerfile
-├── docker-compose.yml                      # Docker Compose 配置
+├── tests/AiImConnector.Tests/              # 單元測試（47 個測試）
+├── docker/                                 # Docker 部署設定
+│   ├── Dockerfile                          #   多階段建置 Dockerfile
+│   ├── docker-compose.yml                  #   Docker Compose 部署配置
+│   ├── docker-compose.build.yml            #   Docker Image 建置配置
+│   ├── publish.sh                          #   多平台 Image 建置推送腳本
+│   ├── .env.example                        #   環境變數範本
+│   └── .env                                #   實際環境變數（不納入版控）
+├── Caddy/                                  # 反向代理設定
+│   ├── Caddyfile                           #   Caddy 設定檔（自動 HTTPS、安全標頭）
+│   └── docker-compose.caddy.yml            #   Caddy 獨立部署配置
 ├── Tasks.md                                # 計畫管理表
 └── README.md                               # 本文件
 ```
@@ -300,15 +308,15 @@ AI-IM-Connector/
 | 技術 | 版本 | 說明 |
 |------|------|------|
 | .NET | 8.0 | WebAPI 框架 |
-| [GitHub.Copilot.SDK](https://www.nuget.org/packages/GitHub.Copilot.SDK) | 0.1.23 | Copilot CLI 封裝，ACP (stdio) 通訊 |
-| [LineBotSDK](https://www.nuget.org/packages/LineBotSDK) | — | LINE Messaging API |
-| [Telegram.Bot](https://www.nuget.org/packages/Telegram.Bot) | — | Telegram Bot API |
+| [GitHub.Copilot.SDK](https://www.nuget.org/packages/GitHub.Copilot.SDK) | 0.1.24-preview.0 | Copilot CLI 封裝，ACP (stdio) 通訊 |
+| [LineBotSDK](https://www.nuget.org/packages/LineBotSDK) | 2.18.45 | LINE Messaging API |
+| [Telegram.Bot](https://www.nuget.org/packages/Telegram.Bot) | 22.x | Telegram Bot API |
 | Docker | — | 多階段建置容器化部署 |
 | xUnit + Moq | — | 單元測試框架 |
 
 ## 🔌 擴充新 IM 平台
 
-請參考 [`src/AiImConnector/Adapters/_Template/README.md`](src/AiImConnector/Adapters/_Template/README.md) 中的步驟說明。
+請參考 [`src/ImConnector/Adapters/_Template/README.md`](src/ImConnector/Adapters/_Template/README.md) 中的步驟說明。
 
 基本流程：
 
@@ -323,36 +331,45 @@ AI-IM-Connector/
 1. **Webhook 需要 HTTPS 公開 URL**：LINE 與 Telegram 的 Webhook 都要求 HTTPS，開發階段可使用 ngrok
 2. **GitHub Token 權限**：需確保 Token 具有 Copilot 存取權限
 3. **Copilot CLI 自動下載**：SDK 會在首次建置時自動下載 Copilot CLI，無需手動安裝
-4. **多媒體限制**：各 IM 平台有不同的檔案大小限制，MediaHandler 會處理相關驗證
+4. **多媒體限制**：各 IM 平台有不同的檔案大小限制，MediaHandler 會處理相關驗證（下載上限 50 MB）
 5. **Secret 管理**：所有敏感資訊（Token、Secret）請使用環境變數或 User Secrets，切勿寫入程式碼
+6. **Telegram SecretToken 必須設定**：未設定時服務會拒絕所有 Telegram Webhook 請求（fail-closed 安全策略）
 
 ## 🔒 安全性措施
 
 | 項目 | 說明 |
 |------|------|
 | Webhook 簽名驗證 | LINE 使用 HMAC-SHA256 常數時間比較（`CryptographicOperations.FixedTimeEquals`），防止 timing attack |
-| Telegram 驗證 | 支援 Secret Token 驗證請求來源合法性 |
+| Telegram 驗證 | 使用常數時間比較驗證 Secret Token，未設定時拒絕所有請求（fail-closed） |
 | SSRF 防護 | MediaHandler 限制多媒體下載 URL 僅允許 IM 平台官方 API（白名單機制） |
-| 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏內部錯誤細節 |
-| System Prompt 注入 | 新 Session 首次訊息前自動注入系統提示詞，指示 AI 以 base64 data URI 嵌入圖片，避免存在本機路徑 |
+| 多媒體下載大小限制 | 下載多媒體檔案上限 50 MB，防止記憶體耗盡攻擊 |
+| 多媒體暫存容量上限 | 最多暫存 1000 筆、總容量 500 MB，防止記憶體耗盡 |
+| 暫存 ID 安全性 | 使用加密安全隨機數（`RandomNumberGenerator`）產生暫存 ID，防止列舉攻擊 |
+| 例外資訊保護 | ExceptionHandlingMiddleware 在 Production 環境隱藏所有內部錯誤細節（含 400 錯誤） |
+| System Prompt 注入 | 新 Session 首次訊息前自動注入系統提示詞，使用原子操作避免競態條件重複注入 |
 | 本機路徑偵測與自動修正 | 偵測 AI 回應中的本機檔案路徑，自動發送修正指令要求 AI 重新提供嵌入圖片 |
-| 多媒體暫存服務 | Base64 圖片暫存在記憶體（10 分鐘 TTL），產生臨時 URL 附加於文字回應中供使用者點擊 |
+| Regex 安全性 | 所有正規表達式均設有 1 秒逾時，防止 ReDoS 攻擊 |
 | 執行緒安全 | CopilotSessionManager 使用 per-user SemaphoreSlim 防止並行建立重複 Session |
+| 資源管理 | Stale Session 重建時正確釋放舊 Session 資源，ClearSession 時清理 SemaphoreSlim |
 | Stale Session 重建 | 自動偵測 "Session not found" 錯誤，清除快取並重建新 Session（容器重啟恢復力） |
 | 逾時控制 | 支援 per-platform `ResponseTimeoutSeconds` 覆蓋全域逾時設定，避免長時間回應被截斷 |
-| 輸入驗證 | Telegram ChatId 使用安全的 TryParse 解析，避免格式異常 |
+| 輸入驗證 | Telegram ChatId 使用安全的 TryParse 解析；LINE Webhook 請求大小限制 1 MB |
 | 容器安全 | Docker 以非 root 使用者執行 |
-| HTTPS 強制 | Caddy 反向代理自動管理 Let's Encrypt 憑證 |
+| HTTPS 強制 | Caddy 反向代理自動管理 Let's Encrypt 憑證，含 HSTS 與完整安全標頭 |
 
-## � 變更紀錄
+## 📝 變更紀錄
 
 | 版本 | 日期 | 說明 |
-|------|------|------|| 0.2.2 | 2026-02-12 | 多媒體傳送改為臨時 URL 文字連結：不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應，使用者點擊連結即可檢視圖片，相容性更高 |
-| 0.2.1 | 2026-02-12 | AI 繪圖多媒體直傳功能：System Prompt 注入、AI 回應多媒體解析（AiResponseParser）、本機路徑自動修正、Base64 圖片暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、45 個測試全通過 || 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正、RESPONSE_TIMEOUT 預設值調升至 600 秒 |
+|------|------|------|
+| 0.2.4 | 2026-02-24 | 程式碼審查與安全性掃描（v2）：修復 4 項程式碼品質問題與 12 項安全漏洞 |
+| 0.2.3 | 2026-02-13 | 修復 Base64 FormatException — 清理 base64 資料中的空白字元 |
+| 0.2.2 | 2026-02-12 | 多媒體傳送改為臨時 URL 文字連結 |
+| 0.2.1 | 2026-02-12 | AI 繪圖多媒體直傳功能：System Prompt 注入、AiResponseParser、MediaHostingService |
+| 0.1.2 | 2026-02-12 | 修復 stale session 自動重建、per-platform 逾時設定覆蓋修正 |
 | 0.1.1 | 2026-02-12 | 修復 .sln 專案路徑、stale session 偵測邏輯 |
 | 0.1.0 | 2026-02-12 | 程式碼審查 & 安全性掃描：修復 7 項安全漏洞，更新文件與註解 |
 | 0.0.1 | 2026-02-11 | 初始版本：LINE + Telegram 雙平台支援、Copilot SDK 整合、完整測試覆蓋 |
 
-## �📄 授權
+## 📄 授權
 
 MIT License

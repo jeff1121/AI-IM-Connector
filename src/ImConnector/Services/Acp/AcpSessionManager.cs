@@ -116,7 +116,16 @@ public class CopilotSessionManager
         {
             // Session 已失效（例如容器重啟後 Copilot CLI 子程序重新啟動），清除快取並重建
             _logger.LogWarning("Session {SessionId} 已失效，清除快取並重建新 Session", session.SessionId);
-            _sessions.TryRemove(userKey, out _);
+
+            // 正確釋放舊 Session 資源（避免資源洩漏）
+            if (_sessions.TryRemove(userKey, out var staleSession))
+            {
+                try { await staleSession.DisposeAsync(); }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogDebug(disposeEx, "釋放失效 Session 時發生錯誤（可忽略）");
+                }
+            }
             _initializedSessions.TryRemove(userKey, out _);
 
             session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
@@ -125,6 +134,10 @@ public class CopilotSessionManager
             var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
             var content = response?.Data?.Content ?? "";
             _logger.LogDebug("重建後收到回應（{Length} 字元）", content.Length);
+
+            // 重建後標記 System Prompt 已注入（prompt 中已包含）
+            _initializedSessions.TryAdd(userKey, true);
+
             return content;
         }
     }
@@ -143,7 +156,7 @@ public class CopilotSessionManager
         return false;
     }
 
-    /// <summary>清除使用者的 Session</summary>
+    /// <summary>清除使用者的 Session 及相關資源</summary>
     public async Task ClearSessionAsync(string platform, string userId, CancellationToken cancellationToken = default)
     {
         var userKey = BuildSessionId(platform, userId);
@@ -152,23 +165,27 @@ public class CopilotSessionManager
             await session.DisposeAsync();
         }
         _initializedSessions.TryRemove(userKey, out _);
+
+        // 清除 per-user SemaphoreSlim（避免長期累積造成記憶體洩漏）
+        if (_sessionLocks.TryRemove(userKey, out var semaphore))
+        {
+            semaphore.Dispose();
+        }
+
         _logger.LogInformation("已清除 Session：{UserKey}", userKey);
     }
 
-    /// <summary>在新 Session 首次發送時，在 Prompt 前加入 System Prompt</summary>
+    /// <summary>在新 Session 首次發送時，在 Prompt 前加入 System Prompt（使用 TryAdd 原子操作避免競態條件）</summary>
     private string PrependSystemPromptIfNeeded(string userKey, AgentBinding? binding, string prompt)
     {
-        if (_initializedSessions.ContainsKey(userKey))
+        // 使用 TryAdd 原子操作作為 check-and-set，避免並行請求重複注入
+        if (!_initializedSessions.TryAdd(userKey, true))
             return prompt;
 
         var systemPrompt = binding?.SystemPrompt;
         if (string.IsNullOrWhiteSpace(systemPrompt))
-        {
-            _initializedSessions.TryAdd(userKey, true);
             return prompt;
-        }
 
-        _initializedSessions.TryAdd(userKey, true);
         _logger.LogDebug("注入 System Prompt 到 Session {UserKey}", userKey);
         return $"{systemPrompt}\n\n---\n\n{prompt}";
     }

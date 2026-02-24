@@ -20,6 +20,9 @@ public class MediaHandler : IMediaHandler
         "api.telegram.org"
     };
 
+    /// <summary>多媒體下載大小上限（50 MB）</summary>
+    private const long MaxDownloadSize = 50 * 1024 * 1024;
+
     public MediaHandler(HttpClient httpClient, ILogger<MediaHandler> logger)
     {
         _httpClient = httpClient;
@@ -49,7 +52,13 @@ public class MediaHandler : IMediaHandler
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
+        // 檢查檔案大小上限（防止記憶體耗盡攻擊）
+        if (response.Content.Headers.ContentLength > MaxDownloadSize)
+            throw new InvalidOperationException($"多媒體檔案過大（{response.Content.Headers.ContentLength} bytes），上限為 {MaxDownloadSize} bytes");
+
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (bytes.Length > MaxDownloadSize)
+            throw new InvalidOperationException($"多媒體檔案過大（{bytes.Length} bytes），上限為 {MaxDownloadSize} bytes");
         var mimeType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
         var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
 

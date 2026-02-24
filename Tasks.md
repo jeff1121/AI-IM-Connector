@@ -1,6 +1,6 @@
 # 📋 AI IM Connector — 計畫管理表
 
-> 最後更新：2026-02-12（v0.2.2）
+> 最後更新：2026-02-24（v0.2.4）
 
 ## 📊 總覽
 
@@ -19,6 +19,7 @@
 | 第十一階段 | 文件與測試 | ✅ 完成 | 2/2 |
 | 第十二階段 | AI 多媒體直傳（繪圖自動傳送） | ✅ 完成 | 6/6 |
 | 第十三階段 | 多媒體傳送改為臨時 URL 文字連結 | ✅ 完成 | 1/1 |
+| 第十四階段 | 程式碼審查與安全性掃描（v2） | ✅ 完成 | 4/4 |
 | 後續擴充 | Teams / Google Chat / Slack 等 | 📌 待規劃 | 0/8 |
 
 ---
@@ -128,6 +129,15 @@
 
 ---
 
+## 第十四階段：程式碼審查與安全性掃描（v2）
+
+- [x] **14.1** 程式碼品質修復 — Session 資源洩漏修復（stale session 重建時正確 DisposeAsync）、System Prompt 競態條件修復（TryAdd 原子操作）、ClearSession 時清理 SemaphoreSlim、Session 重建後正確標記 System Prompt 已注入
+- [x] **14.2** 安全漏洞修復（High）— Telegram Webhook 驗證強化（fail-closed + 常數時間比較）、多媒體下載大小限制（50 MB）、暫存服務容量上限（1000 筆 / 500 MB）
+- [x] **14.3** 安全漏洞修復（Medium）— Production 錯誤訊息完整遮蔽（含 400 錯誤）、ReDoS 防護（所有 Regex 加入 1 秒逾時）、LINE Webhook 請求大小限制（1 MB）、加密安全隨機數產生暫存 ID
+- [x] **14.4** 基礎設施安全強化 — Caddy 安全標頭（HSTS、CSP、Permissions-Policy）、.env.example 移除真實基礎設施資訊
+
+---
+
 ## 後續擴充（待規劃）
 
 - [ ] **E.1** Microsoft Teams 適配器
@@ -181,10 +191,12 @@
 
 | 日期 | 說明 |
 |------|------|
-| 2026-02-10 | 初始實作完成（11 個階段，30 測試通過） |
-| 2026-02-10 | 重構 ACP 層為 GitHub Copilot SDK，移除舊 HTTP+SSE 客戶端與自建 Session 管理 |
+| 2026-02-24 | **v0.2.4**：程式碼審查與安全性掃描（v2）— 修復 4 項程式碼品質問題（Session 資源洩漏、System Prompt 競態條件、SemaphoreSlim 累積、重建後重複注入）與 12 項安全漏洞（Telegram 驗證強化、多媒體大小限制、暫存容量上限、加密隨機 ID、ReDoS 防護、錯誤訊息遮蔽、請求大小限制、Caddy 安全標頭、.env.example 清理）、47 個測試全通過 |
+| 2026-02-13 | **v0.2.3**：修復 Base64 FormatException — 清理 base64 資料中的空白字元 |
+| 2026-02-12 | **v0.2.2**：多媒體傳送改為臨時 URL 文字連結 — 不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應 |
+| 2026-02-12 | **v0.2.1**：AI 多媒體直傳功能 — AiResponseParser、本機路徑修正、System Prompt 注入、MediaHostingService、MediaController、45 個測試全通過 |
+| 2026-02-12 | **v0.1.2**：修復 per-platform `ResponseTimeoutSeconds` 未正確覆蓋全域設定的問題 |
+| 2026-02-12 | **v0.1.1**：修復 .sln 專案路徑、stale session 偵測與自動重建邏輯 |
+| 2026-02-12 | **v0.1.0**：程式碼審查 & 安全性掃描：修復 7 項安全漏洞與程式品質問題 |
 | 2026-02-11 | 重構為官方 Copilot SDK（CliUrl 連線外部 server），端對端測試通過 |
-| 2026-02-12 | **程式碼審查 & 安全性掃描**：修復 7 項安全漏洞與程式品質問題，更新所有文件與註解 |
-| 2026-02-12 | **v0.1.1**：修復 .sln 專案路徑（`src\AiImConnector\` → `src\ImConnector\`）、stale session 偵測與自動重建邏輯 |
-| 2026-02-12 | **v0.1.2**：修復 per-platform `ResponseTimeoutSeconds` 未正確覆蓋全域設定的問題（預設 120s → 600s），docker-compose.yml 新增各平台獨立逾時設定 || 2026-02-12 | **v0.2.2**：多媒體傳送改為臨時 URL 文字連結 — 不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應，使用者點擊連結即可檢視圖片 |
-| 2026-02-12 | **v0.2.1**：AI 多媒體直傳功能 — 新增 AI 回應多媒體解析器（AiResponseParser）、本機路徑偵測與自動修正、System Prompt 注入、Base64 多媒體暫存服務（MediaHostingService）、多媒體 API 端點（MediaController）、ConnectorSettings 設定、Webhook Controller 擴充支援多媒體回應、45 個測試全通過 |
+| 2026-02-10 | 初始實作完成（11 個階段，30 測試通過） |

@@ -43,12 +43,16 @@ public class ExceptionHandlingMiddleware
             _ => HttpStatusCode.InternalServerError
         };
 
-        // 僅在開發環境回傳詳細錯誤訊息，Production 環境隱藏內部細節
+        // 僅在開發環境回傳詳細錯誤訊息，Production 環境隱藏所有內部細節
         var errorMessage = _environment.IsDevelopment()
             ? exception.Message
-            : statusCode == HttpStatusCode.InternalServerError
-                ? "伺服器內部錯誤，請稍後再試。"
-                : exception.Message;
+            : statusCode switch
+            {
+                HttpStatusCode.BadRequest => "請求格式無效，請檢查參數。",
+                HttpStatusCode.Unauthorized => "驗證失敗，請確認身分資訊。",
+                HttpStatusCode.InternalServerError => "伺服器內部錯誤，請稍後再試。",
+                _ => "伺服器內部錯誤，請稍後再試。"
+            };
 
         var response = _environment.IsDevelopment()
             ? new { error = new { message = errorMessage, type = exception.GetType().Name } } as object

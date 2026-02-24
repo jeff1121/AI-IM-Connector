@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using AiImConnector.Configuration;
 using AiImConnector.Models;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,7 @@ namespace AiImConnector.Services.Media;
 /// <summary>
 /// 多媒體暫存服務 — 將 Base64 多媒體資料暫存在記憶體中，並提供公開 URL 供 IM 平台存取。
 /// 每筆暫存資料在 10 分鐘後自動過期，由背景 Timer 定期清理。
+/// 設有最大暫存數量（1000 筆）與總容量上限（500 MB），防止記憶體耗盡。
 /// </summary>
 public class MediaHostingService : IDisposable
 {
@@ -17,6 +19,13 @@ public class MediaHostingService : IDisposable
     private readonly ILogger<MediaHostingService> _logger;
     private readonly Timer _cleanupTimer;
     private readonly TimeSpan _mediaTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>最大暫存數量</summary>
+    private const int MaxEntries = 1000;
+    /// <summary>總容量上限（500 MB）</summary>
+    private const long MaxTotalBytes = 500 * 1024 * 1024;
+    /// <summary>目前暫存總大小（bytes）</summary>
+    private long _totalBytes;
 
     public MediaHostingService(IOptions<ConnectorSettings> settings, ILogger<MediaHostingService> logger)
     {
@@ -30,7 +39,7 @@ public class MediaHostingService : IDisposable
         }
     }
 
-    /// <summary>暫存 Base64 多媒體並回傳公開 URL</summary>
+    /// <summary>暫存 Base64 多媒體並回傳公開 URL（含數量與容量上限檢查）</summary>
     public string? HostMedia(MediaContent media)
     {
         if (string.IsNullOrEmpty(media.Base64Data))
@@ -53,7 +62,22 @@ public class MediaHostingService : IDisposable
             return null;
         }
 
-        var id = Guid.NewGuid().ToString("N");
+        // 容量與數量上限檢查（防止記憶體耗盡）
+        if (_store.Count >= MaxEntries)
+        {
+            _logger.LogWarning("多媒體暫存已達上限（{MaxEntries} 筆），拒絕新增", MaxEntries);
+            return null;
+        }
+        if (Interlocked.Read(ref _totalBytes) + data.Length > MaxTotalBytes)
+        {
+            _logger.LogWarning("多媒體暫存總容量已達上限（{MaxTotalBytes} bytes），拒絕新增", MaxTotalBytes);
+            return null;
+        }
+
+        // 使用加密安全隨機數產生 ID（比 GUID 更難猜測）
+        var idBytes = RandomNumberGenerator.GetBytes(16);
+        var id = Convert.ToHexString(idBytes).ToLowerInvariant();
+
         _store[id] = new HostedMedia
         {
             Data = data,
@@ -61,6 +85,7 @@ public class MediaHostingService : IDisposable
             FileName = media.FileName,
             ExpiresAt = DateTimeOffset.UtcNow.Add(_mediaTtl)
         };
+        Interlocked.Add(ref _totalBytes, data.Length);
 
         var url = $"{_publicBaseUrl}/api/media/{id}";
         _logger.LogDebug("暫存多媒體 {Id}，過期時間：{ExpiresAt}，URL：{Url}", id, _store[id].ExpiresAt, url);
@@ -81,14 +106,21 @@ public class MediaHostingService : IDisposable
     private void CleanupExpired()
     {
         var count = 0;
+        long freedBytes = 0;
         var now = DateTimeOffset.UtcNow;
         foreach (var kvp in _store)
         {
-            if (kvp.Value.ExpiresAt <= now && _store.TryRemove(kvp.Key, out _))
+            if (kvp.Value.ExpiresAt <= now && _store.TryRemove(kvp.Key, out var removed))
+            {
+                freedBytes += removed.Data.Length;
                 count++;
+            }
         }
         if (count > 0)
-            _logger.LogDebug("已清理 {Count} 筆過期暫存多媒體", count);
+        {
+            Interlocked.Add(ref _totalBytes, -freedBytes);
+            _logger.LogDebug("已清理 {Count} 筆過期暫存多媒體，釋放 {Bytes} bytes", count, freedBytes);
+        }
     }
 
     public void Dispose()

@@ -35,6 +35,7 @@ public class LineWebhookController : ControllerBase
 
     /// <summary>接收 LINE Webhook 事件</summary>
     [HttpPost]
+    [RequestSizeLimit(1_048_576)] // 限制 Webhook 請求大小為 1 MB
     public async Task<IActionResult> Post()
     {
         // 讀取請求 Body

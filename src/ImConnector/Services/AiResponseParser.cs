@@ -5,30 +5,32 @@ namespace AiImConnector.Services;
 
 /// <summary>
 /// AI 回應解析器 — 從 AI 文字回應中擷取多媒體內容（Markdown 圖片、圖片 URL、Base64 Data URI）
-/// 並偵測本機檔案路徑參照。
+/// 並偵測本機檔案路徑參照。所有正規表達式均設有 1 秒逾時，防止 ReDoS 攻擊。
 /// </summary>
 public static class AiResponseParser
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
     // Markdown 圖片語法：![alt](url 或 data:...) 
     private static readonly Regex MarkdownImageRegex = new(
         @"!\[([^\]]*)\]\(((?:https?://[^\s)]+|data:[^)]+))\)",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled, RegexTimeout);
 
     // 獨立圖片 URL（不在 Markdown 語法內）
     private static readonly Regex StandaloneImageUrlRegex = new(
         @"(?<=\s|^)(https?://[^\s<>""']+\.(?:png|jpe?g|gif|webp|bmp)(?:\?[^\s<>""']*)?)(?=[\s,。、！？)）\]」]|$)",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline, RegexTimeout);
 
     // Base64 Data URI（不在 Markdown 語法內）— 允許 base64 內含換行/空白
     private static readonly Regex Base64DataUriRegex = new(
         @"data:(image/[\w+.\-]+);base64,([A-Za-z0-9+/=\s]+)",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled, RegexTimeout);
 
     // 本機檔案路徑（Windows 或 Unix 絕對路徑，指向圖片檔）
     private static readonly Regex LocalFilePathRegex = new(
         @"(?:`?)([A-Za-z]:\\(?:[^\s`<>""*?|:]+\\)*[^\s`<>""*?|:]+\.(?:png|jpe?g|gif|webp|bmp)" +
         @"|/(?:home|Users|tmp|var|opt)/(?:[^\s`<>""*?|]+/)*[^\s`<>""*?|]+\.(?:png|jpe?g|gif|webp|bmp))(?:`?)",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
     /// <summary>解析 AI 回應文字，擷取多媒體內容並回傳結構化結果</summary>
     public static RouterResponse Parse(string aiResponse)
@@ -136,7 +138,7 @@ public static class AiResponseParser
         };
     }
 
-    private static readonly Regex WhitespaceRegex = new(@"\s", RegexOptions.Compiled);
+    private static readonly Regex WhitespaceRegex = new(@"\s", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     /// <summary>移除 Base64 字串中的空白與換行字元</summary>
     private static string SanitizeBase64(string base64) => WhitespaceRegex.Replace(base64, "");
