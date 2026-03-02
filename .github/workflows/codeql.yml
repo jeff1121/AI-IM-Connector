@@ -1,4 +1,4 @@
-name: CodeQL 安全掃描
+name: CodeQL 安全掃描報告
 
 on:
   push:
@@ -7,15 +7,18 @@ on:
     branches: ['**']
   schedule:
     - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
   security-events: write
+  issues: write
+  pull-requests: write
 
 jobs:
   analyze:
-    name: CodeQL 分析
+    name: CodeQL 安全分析與報告
     runs-on: ubuntu-latest
 
     strategy:
@@ -45,3 +48,133 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: '/language:${{ matrix.language }}'
+          output: codeql-results
+
+      - name: 產生安全掃描報告
+        if: always()
+        id: report
+        run: |
+          SARIF_FILE=$(find codeql-results -name "*.sarif" -type f 2>/dev/null | head -1)
+          if [ -z "$SARIF_FILE" ]; then
+            echo "has_results=false" >> $GITHUB_OUTPUT
+            echo "## 🔒 CodeQL 安全掃描報告" > security-report.md
+            echo "" >> security-report.md
+            echo "⚠️ 未產生 SARIF 分析結果" >> security-report.md
+            exit 0
+          fi
+
+          echo "has_results=true" >> $GITHUB_OUTPUT
+
+          TOTAL=$(jq '[.runs[].results[]] | length' "$SARIF_FILE")
+          ERRORS=$(jq '[.runs[].results[] | select(.level == "error")] | length' "$SARIF_FILE")
+          WARNINGS=$(jq '[.runs[].results[] | select(.level == "warning")] | length' "$SARIF_FILE")
+          NOTES=$(jq '[.runs[].results[] | select(.level == "note" or .level == "none" or .level == null)] | length' "$SARIF_FILE")
+
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+
+          {
+            echo "## 🔒 CodeQL 安全掃描報告"
+            echo ""
+            echo "### 📊 掃描摘要"
+            echo ""
+            echo "| 嚴重程度 | 數量 |"
+            echo "|----------|------|"
+            echo "| 🔴 錯誤 (Error) | $ERRORS |"
+            echo "| 🟡 警告 (Warning) | $WARNINGS |"
+            echo "| 🔵 提示 (Note) | $NOTES |"
+            echo "| **總計** | **$TOTAL** |"
+            echo ""
+          } > security-report.md
+
+          if [ "$TOTAL" -gt 0 ]; then
+            {
+              echo "### 📋 發現的問題"
+              echo ""
+              echo "| # | 嚴重程度 | 規則 | 檔案位置 | 說明 |"
+              echo "|---|----------|------|----------|------|"
+            } >> security-report.md
+
+            jq -r '
+              [.runs[].results[] | {
+                level: .level,
+                ruleId: .ruleId,
+                message: .message.text,
+                file: (.locations[0].physicalLocation.artifactLocation.uri // "N/A"),
+                line: (.locations[0].physicalLocation.region.startLine // "N/A")
+              }] | to_entries[] |
+              "| \(.key + 1) | \(if .value.level == "error" then "🔴" elif .value.level == "warning" then "🟡" else "🔵" end) | `\(.value.ruleId)` | `\(.value.file):\(.value.line)` | \(.value.message | split("\n")[0] | .[0:100]) |"
+            ' "$SARIF_FILE" >> security-report.md
+          else
+            echo "✅ **未發現任何安全問題**" >> security-report.md
+          fi
+
+          {
+            echo ""
+            echo "---"
+            echo "> 📋 此報告由 GitHub Actions + CodeQL 自動產生"
+          } >> security-report.md
+
+      - name: 發佈 PR 安全掃描報告
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.payload.pull_request.number,
+              body: report
+            });
+
+      - name: 建立或更新安全問題 Issue
+        if: always() && github.event_name != 'pull_request' && steps.report.outputs.total > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            const total = '${{ steps.report.outputs.total }}';
+            const title = `🔒 CodeQL 安全掃描報告 — 發現 ${total} 個問題`;
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              ...context.repo,
+              labels: 'security,codeql',
+              state: 'open'
+            });
+
+            if (issues.length > 0) {
+              await github.rest.issues.update({
+                ...context.repo,
+                issue_number: issues[0].number,
+                title: title,
+                body: report
+              });
+            } else {
+              try {
+                await github.rest.issues.create({
+                  ...context.repo,
+                  title: title,
+                  body: report,
+                  labels: ['security', 'codeql']
+                });
+              } catch (e) {
+                // Labels may not exist yet, create without labels
+                await github.rest.issues.create({
+                  ...context.repo,
+                  title: title,
+                  body: report
+                });
+              }
+            }
+
+      - name: 上傳安全掃描報告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
+          retention-days: 90
