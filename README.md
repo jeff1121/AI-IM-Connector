@@ -1,5 +1,9 @@
 # AI IM Connector
 
+[![GitHub Release](https://img.shields.io/github/v/release/jeff1121/AI-IM-Connector?label=%E7%89%88%E6%9C%AC&color=blue)](https://github.com/jeff1121/AI-IM-Connector/releases)
+[![CI](https://github.com/jeff1121/AI-IM-Connector/actions/workflows/ci.yml/badge.svg)](https://github.com/jeff1121/AI-IM-Connector/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/jeff1121/AI-IM-Connector/actions/workflows/codeql.yml/badge.svg)](https://github.com/jeff1121/AI-IM-Connector/actions/workflows/codeql.yml)
+
 > 🤖 即時通訊平台 × AI Agent 訊息轉送服務
 
 | 項目 | 值 |
