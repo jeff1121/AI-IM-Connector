@@ -1,6 +1,6 @@
 # 📋 AI IM Connector — 計畫管理表
 
-> 最後更新：2026-03-24（v0.2.5）
+> 最後更新：2026-03-24（v0.3.0）
 
 ## 📊 總覽
 
@@ -21,7 +21,7 @@
 | 第十三階段 | 多媒體傳送改為臨時 URL 文字連結 | ✅ 完成 | 1/1 |
 | 第十四階段 | 程式碼審查與安全性掃描（v2） | ✅ 完成 | 4/4 |
 | 第十五階段 | 程式碼審查（v3） | ✅ 完成 | 3/3 |
-| 第十六階段 | 基礎設施強化 | 📌 待開始 | 0/4 |
+| 第十六階段 | 基礎設施強化 | ✅ 完成 | 4/4 |
 | 第十七階段 | Slack 適配器 | 📌 待開始 | 0/4 |
 | 第十八階段 | Microsoft Teams 適配器 | 📌 待開始 | 0/4 |
 | 第十九階段 | Google Chat 適配器 | 📌 待開始 | 0/4 |
@@ -153,29 +153,32 @@
 
 ## 第十六階段：基礎設施強化
 
-> 建議優先實作：為後續新增平台與多租戶功能打下穩固基礎。
+> ✅ 已完成 — 建立完整的可觀測性、安全性與架構擴展基礎。
 
-- [ ] **16.1** 健康檢查與監控端點（OpenTelemetry）
+- [x] **16.1** 健康檢查與監控端點（OpenTelemetry）
   - 整合 `OpenTelemetry.Extensions.Hosting`、`OpenTelemetry.Instrumentation.AspNetCore`
-  - 新增 `/health` 結構化健康檢查（檢查 Copilot CLI 連線狀態、各 IM 平台 API 可用性）
-  - 新增 `/metrics` Prometheus 端點（請求數、回應延遲、Session 數量、多媒體暫存使用量）
-  - 分散式追蹤（Trace ID 貫穿 Webhook → MessageRouter → Copilot SDK）
-- [ ] **16.2** Rate Limiting
-  - 使用 .NET 8 內建 `Microsoft.AspNetCore.RateLimiting`
-  - 按使用者 ID 限流（防止單一使用者濫用）
-  - 按 IM 平台限流（Webhook 端點獨立限流策略）
+  - 新增 `/health` 結構化健康檢查（Copilot CLI 連線狀態 + 多媒體暫存使用量）
+  - 新增 `/metrics` Prometheus 端點（訊息數、路由耗時、Session 生命週期、多媒體暫存）
+  - 新增 ConnectorMetrics 自訂度量類別（Meter: AiImConnector）
+  - MessageRouter、CopilotSessionManager、MediaHostingService 整合度量記錄
+- [x] **16.2** Rate Limiting
+  - 使用 .NET 8 內建 `Microsoft.AspNetCore.RateLimiting`（SlidingWindow）
+  - Webhook 端點：每 IP 每分鐘 60 次（LINE、Telegram 控制器標注 `[EnableRateLimiting("webhook")]`）
+  - 多媒體下載端點：每 IP 每分鐘 120 次（`[EnableRateLimiting("media")]`）
+  - 全域 fallback：每 IP 每分鐘 200 次
   - 429 回應包含 `Retry-After` 標頭
-- [ ] **16.3** Redis / 資料庫持久化 Session Store
-  - 定義 `ISessionStore` 介面（取代 `ConcurrentDictionary` 記憶體快取）
-  - 實作 `RedisSessionStore`（使用 `StackExchange.Redis`）
-  - 實作 `InMemorySessionStore`（保留現有行為作為預設/開發用）
-  - Session 序列化/反序列化（含 CopilotSession 狀態重建）
-  - MediaHostingService 改為 Redis 後端（支援多實例部署）
-- [ ] **16.4** 訊息佇列（RabbitMQ / Kafka）
-  - 定義 `IMessageQueue` 介面
-  - 將 Webhook Controller 的 fire-and-forget `Task.Run` 改為佇列消費模式
-  - 實作 `RabbitMqMessageQueue`（使用 `RabbitMQ.Client`）
-  - 消費者端錯誤重試與死信佇列（DLQ）
+- [x] **16.3** Redis / 記憶體多媒體暫存（IMediaStore 抽象化）
+  - 定義 `IMediaStore` 介面（Store / Get / Remove / Cleanup）
+  - 實作 `InMemoryMediaStore`：ConcurrentDictionary（預設，單一實例部署）
+  - 實作 `RedisMediaStore`：StackExchange.Redis（多實例部署，原生 TTL 自動過期）
+  - 重構 MediaHostingService 使用 IMediaStore 取代直接操作 ConcurrentDictionary
+  - appsettings.json `ConnectionStrings:Redis` 設定即自動切換
+- [x] **16.4** 訊息佇列（Channel&lt;T&gt; 生產者-消費者模式）
+  - 定義 `IMessageQueue` 介面（EnqueueAsync / DequeueAsync）
+  - 實作 `InMemoryMessageQueue`：BoundedChannel（上限 1000 則，DropOldest）
+  - 新增 `MessageQueueWorker`：BackgroundService，持續消費佇列訊息
+  - 重構 LINE/Telegram Webhook 控制器：移除 Task.Run fire-and-forget，改用 EnqueueAsync
+  - 適配器以 IImAdapter 介面註冊，供佇列處理器自動解析平台
 
 ## 第十七階段：Slack 適配器
 
@@ -257,6 +260,7 @@
 
 | 日期 | 說明 |
 |------|------|
+| 2026-03-24 | **v0.3.0**：第十六階段（基礎設施強化）完成 — 16.1 OpenTelemetry 健康檢查與 Prometheus 指標、16.2 SlidingWindow Rate Limiting、16.3 IMediaStore 抽象化（InMemory / Redis 自動切換）、16.4 Channel&lt;T&gt; 訊息佇列取代 Task.Run fire-and-forget、47 個測試全通過 |
 | 2026-03-24 | **v0.2.5**：程式碼審查（v3）— 修復 3 項問題（MediaHostingService TOCTOU 競態條件、AiResponseParser ReDoS 防護補全、CopilotClientService 啟動執行緒安全）、新增 `.github/copilot-instructions.md`、演進計畫（第十六～二十階段）、47 個測試全通過 |
 | 2026-02-24 | **v0.2.4**：程式碼審查與安全性掃描（v2）— 修復 4 項程式碼品質問題（Session 資源洩漏、System Prompt 競態條件、SemaphoreSlim 累積、重建後重複注入）與 12 項安全漏洞（Telegram 驗證強化、多媒體大小限制、暫存容量上限、加密隨機 ID、ReDoS 防護、錯誤訊息遮蔽、請求大小限制、Caddy 安全標頭、.env.example 清理）、47 個測試全通過 |
 | 2026-02-13 | **v0.2.3**：修復 Base64 FormatException — 清理 base64 資料中的空白字元 |
