@@ -19,6 +19,7 @@ public class MediaHostingService : IDisposable
     private readonly ILogger<MediaHostingService> _logger;
     private readonly Timer _cleanupTimer;
     private readonly TimeSpan _mediaTtl = TimeSpan.FromMinutes(10);
+    private readonly object _capacityLock = new();
 
     /// <summary>最大暫存數量</summary>
     private const int MaxEntries = 1000;
@@ -62,30 +63,34 @@ public class MediaHostingService : IDisposable
             return null;
         }
 
-        // 容量與數量上限檢查（防止記憶體耗盡）
-        if (_store.Count >= MaxEntries)
+        // 使用 lock 確保容量檢查與新增為原子操作，防止 TOCTOU 競態條件
+        string id;
+        lock (_capacityLock)
         {
-            _logger.LogWarning("多媒體暫存已達上限（{MaxEntries} 筆），拒絕新增", MaxEntries);
-            return null;
-        }
-        if (Interlocked.Read(ref _totalBytes) + data.Length > MaxTotalBytes)
-        {
-            _logger.LogWarning("多媒體暫存總容量已達上限（{MaxTotalBytes} bytes），拒絕新增", MaxTotalBytes);
-            return null;
-        }
+            if (_store.Count >= MaxEntries)
+            {
+                _logger.LogWarning("多媒體暫存已達上限（{MaxEntries} 筆），拒絕新增", MaxEntries);
+                return null;
+            }
+            if (Interlocked.Read(ref _totalBytes) + data.Length > MaxTotalBytes)
+            {
+                _logger.LogWarning("多媒體暫存總容量已達上限（{MaxTotalBytes} bytes），拒絕新增", MaxTotalBytes);
+                return null;
+            }
 
-        // 使用加密安全隨機數產生 ID（比 GUID 更難猜測）
-        var idBytes = RandomNumberGenerator.GetBytes(16);
-        var id = Convert.ToHexString(idBytes).ToLowerInvariant();
+            // 使用加密安全隨機數產生 ID（比 GUID 更難猜測）
+            var idBytes = RandomNumberGenerator.GetBytes(16);
+            id = Convert.ToHexString(idBytes).ToLowerInvariant();
 
-        _store[id] = new HostedMedia
-        {
-            Data = data,
-            MimeType = media.MimeType,
-            FileName = media.FileName,
-            ExpiresAt = DateTimeOffset.UtcNow.Add(_mediaTtl)
-        };
-        Interlocked.Add(ref _totalBytes, data.Length);
+            _store[id] = new HostedMedia
+            {
+                Data = data,
+                MimeType = media.MimeType,
+                FileName = media.FileName,
+                ExpiresAt = DateTimeOffset.UtcNow.Add(_mediaTtl)
+            };
+            Interlocked.Add(ref _totalBytes, data.Length);
+        }
 
         var url = $"{_publicBaseUrl}/api/media/{id}";
         _logger.LogDebug("暫存多媒體 {Id}，過期時間：{ExpiresAt}，URL：{Url}", id, _store[id].ExpiresAt, url);

@@ -32,6 +32,10 @@ public static class AiResponseParser
         @"|/(?:home|Users|tmp|var|opt)/(?:[^\s`<>""*?|]+/)*[^\s`<>""*?|]+\.(?:png|jpe?g|gif|webp|bmp))(?:`?)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
+    // 多餘空行清理
+    private static readonly Regex ExcessNewlinesRegex = new(
+        @"\n{3,}", RegexOptions.Compiled, RegexTimeout);
+
     /// <summary>解析 AI 回應文字，擷取多媒體內容並回傳結構化結果</summary>
     public static RouterResponse Parse(string aiResponse)
     {
@@ -104,7 +108,7 @@ public static class AiResponseParser
         });
 
         // 清理多餘空行
-        text = Regex.Replace(text.Trim(), @"\n{3,}", "\n\n");
+        text = ExcessNewlinesRegex.Replace(text.Trim(), "\n\n");
 
         // 4. 偵測本機檔案路徑參照
         var localPaths = new List<string>();
