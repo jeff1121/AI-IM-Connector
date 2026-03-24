@@ -1,10 +1,17 @@
 using AiImConnector.Adapters.Line;
 using AiImConnector.Adapters.Telegram;
 using AiImConnector.Configuration;
+using AiImConnector.HealthChecks;
 using AiImConnector.Middleware;
 using AiImConnector.Services;
 using AiImConnector.Services.Acp;
 using AiImConnector.Services.Media;
+using AiImConnector.Telemetry;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +38,25 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// === 健康檢查 ===
+builder.Services
+    .AddHealthChecks()
+    .AddCheck<CopilotHealthCheck>("copilot-cli", tags: new[] { "ready" })
+    .AddCheck<MediaHostingHealthCheck>("media-hosting", tags: new[] { "ready" });
+
+// === OpenTelemetry 監控 ===
+builder.Services.AddSingleton<ConnectorMetrics>();
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("AiImConnector"))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation())
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddMeter(ConnectorMetrics.MeterName)
+        .AddPrometheusExporter());
+
 // === Copilot CLI 生命週期管理 ===
 builder.Services.AddHostedService<CopilotLifecycleService>();
 
@@ -51,8 +77,14 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 
-// 健康檢查端點
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
+// 健康檢查端點（結構化 JSON 回應）
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
+// Prometheus 指標端點
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
 

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using AiImConnector.Models;
 using AiImConnector.Services.Acp;
 using AiImConnector.Services.Media;
+using AiImConnector.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace AiImConnector.Services;
@@ -15,17 +17,20 @@ public class MessageRouter
     private readonly CopilotSessionManager _sessionManager;
     private readonly IMediaHandler _mediaHandler;
     private readonly MediaHostingService _mediaHostingService;
+    private readonly ConnectorMetrics _metrics;
     private readonly ILogger<MessageRouter> _logger;
 
     public MessageRouter(
         CopilotSessionManager sessionManager,
         IMediaHandler mediaHandler,
         MediaHostingService mediaHostingService,
+        ConnectorMetrics metrics,
         ILogger<MessageRouter> logger)
     {
         _sessionManager = sessionManager;
         _mediaHandler = mediaHandler;
         _mediaHostingService = mediaHostingService;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -33,10 +38,12 @@ public class MessageRouter
     public async Task<RouterResponse> RouteMessageAsync(UnifiedMessage message, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("收到訊息 — 平台：{Platform}，使用者：{UserId}", message.Platform, message.UserId);
+        _metrics.RecordMessageReceived(message.Platform);
 
         // 處理指令
         if (message.IsCommand)
         {
+            _metrics.RecordCommandProcessed(message.Platform, message.CommandName ?? "unknown");
             var commandResult = await HandleCommandAsync(message, cancellationToken);
             return new RouterResponse { Text = commandResult };
         }
@@ -45,6 +52,7 @@ public class MessageRouter
         var prompt = BuildPrompt(message);
 
         // 發送到 Copilot 並取得回應
+        var sw = Stopwatch.StartNew();
         try
         {
             var aiText = await _sessionManager.SendMessageAsync(
@@ -121,11 +129,16 @@ public class MessageRouter
             // 清除 MediaContents — 已轉為文字 URL 或暫存失敗均不再交由 Controller 推送
             response.MediaContents.Clear();
 
+            sw.Stop();
+            _metrics.RecordMessageRouted(message.Platform);
+            _metrics.RecordRoutingDuration(message.Platform, sw.ElapsedMilliseconds);
+
             return response;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "訊息路由失敗 — 平台：{Platform}，使用者：{UserId}", message.Platform, message.UserId);
+            _metrics.RecordMessageFailed(message.Platform);
             return new RouterResponse { Text = "⚠️ AI 回應發生錯誤，請稍後再試。" };
         }
     }

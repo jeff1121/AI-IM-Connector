@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using AiImConnector.Configuration;
 using AiImConnector.Models;
+using AiImConnector.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,7 @@ public class MediaHostingService : IDisposable
 {
     private readonly ConcurrentDictionary<string, HostedMedia> _store = new();
     private readonly string _publicBaseUrl;
+    private readonly ConnectorMetrics _metrics;
     private readonly ILogger<MediaHostingService> _logger;
     private readonly Timer _cleanupTimer;
     private readonly TimeSpan _mediaTtl = TimeSpan.FromMinutes(10);
@@ -28,9 +30,10 @@ public class MediaHostingService : IDisposable
     /// <summary>目前暫存總大小（bytes）</summary>
     private long _totalBytes;
 
-    public MediaHostingService(IOptions<ConnectorSettings> settings, ILogger<MediaHostingService> logger)
+    public MediaHostingService(IOptions<ConnectorSettings> settings, ConnectorMetrics metrics, ILogger<MediaHostingService> logger)
     {
         _publicBaseUrl = (settings.Value.PublicBaseUrl ?? "").TrimEnd('/');
+        _metrics = metrics;
         _logger = logger;
         _cleanupTimer = new Timer(_ => CleanupExpired(), null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
@@ -93,6 +96,7 @@ public class MediaHostingService : IDisposable
         }
 
         var url = $"{_publicBaseUrl}/api/media/{id}";
+        _metrics.RecordMediaHosted();
         _logger.LogDebug("暫存多媒體 {Id}，過期時間：{ExpiresAt}，URL：{Url}", id, _store[id].ExpiresAt, url);
         return url;
     }
@@ -107,6 +111,15 @@ public class MediaHostingService : IDisposable
         }
         return null;
     }
+
+    /// <summary>取得暫存服務統計資訊</summary>
+    public MediaHostingStats GetStats() => new()
+    {
+        EntryCount = _store.Count,
+        TotalBytes = Interlocked.Read(ref _totalBytes),
+        MaxEntries = MaxEntries,
+        MaxTotalBytes = MaxTotalBytes
+    };
 
     private void CleanupExpired()
     {
@@ -124,6 +137,7 @@ public class MediaHostingService : IDisposable
         if (count > 0)
         {
             Interlocked.Add(ref _totalBytes, -freedBytes);
+            _metrics.RecordMediaExpired(count);
             _logger.LogDebug("已清理 {Count} 筆過期暫存多媒體，釋放 {Bytes} bytes", count, freedBytes);
         }
     }
@@ -142,4 +156,13 @@ public class HostedMedia
     public string MimeType { get; set; } = "application/octet-stream";
     public string? FileName { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
+}
+
+/// <summary>暫存服務統計資訊</summary>
+public class MediaHostingStats
+{
+    public int EntryCount { get; set; }
+    public long TotalBytes { get; set; }
+    public int MaxEntries { get; set; }
+    public long MaxTotalBytes { get; set; }
 }

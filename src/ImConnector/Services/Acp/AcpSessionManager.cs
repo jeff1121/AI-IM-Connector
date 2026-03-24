@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using AiImConnector.Configuration;
+using AiImConnector.Telemetry;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,6 +16,7 @@ public class CopilotSessionManager
     private readonly ICopilotClientService _clientService;
     private readonly AgentBindingSettings _bindingSettings;
     private readonly AcpSettings _acpSettings;
+    private readonly ConnectorMetrics _metrics;
     private readonly ILogger<CopilotSessionManager> _logger;
 
     /// <summary>使用者對應的 CopilotSession（UserKey → CopilotSession）</summary>
@@ -30,11 +32,13 @@ public class CopilotSessionManager
         ICopilotClientService clientService,
         IOptions<AgentBindingSettings> bindingSettings,
         IOptions<AcpSettings> acpSettings,
+        ConnectorMetrics metrics,
         ILogger<CopilotSessionManager> logger)
     {
         _clientService = clientService;
         _bindingSettings = bindingSettings.Value;
         _acpSettings = acpSettings.Value;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -74,6 +78,7 @@ public class CopilotSessionManager
 
             var session = await _clientService.CreateSessionAsync(model, cancellationToken);
             _sessions.TryAdd(userKey, session);
+            _metrics.RecordSessionCreated(platform);
             _logger.LogInformation("建立新 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
             return session;
         }
@@ -129,6 +134,7 @@ public class CopilotSessionManager
             _initializedSessions.TryRemove(userKey, out _);
 
             session = await GetOrCreateSessionAsync(platform, userId, cancellationToken);
+            _metrics.RecordSessionRebuilt(platform);
             _logger.LogInformation("已重建 Session：{UserKey} → {SessionId}", userKey, session.SessionId);
 
             var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, timeout);
@@ -173,6 +179,7 @@ public class CopilotSessionManager
         }
 
         _logger.LogInformation("已清除 Session：{UserKey}", userKey);
+        _metrics.RecordSessionCleared(platform);
     }
 
     /// <summary>在新 Session 首次發送時，在 Prompt 前加入 System Prompt（使用 TryAdd 原子操作避免競態條件）</summary>
