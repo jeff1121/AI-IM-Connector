@@ -1,6 +1,6 @@
 # 📋 AI IM Connector — 計畫管理表
 
-> 最後更新：2026-02-24（v0.2.4）
+> 最後更新：2026-03-24（v0.2.5）
 
 ## 📊 總覽
 
@@ -20,7 +20,12 @@
 | 第十二階段 | AI 多媒體直傳（繪圖自動傳送） | ✅ 完成 | 6/6 |
 | 第十三階段 | 多媒體傳送改為臨時 URL 文字連結 | ✅ 完成 | 1/1 |
 | 第十四階段 | 程式碼審查與安全性掃描（v2） | ✅ 完成 | 4/4 |
-| 後續擴充 | Teams / Google Chat / Slack 等 | 📌 待規劃 | 0/8 |
+| 第十五階段 | 程式碼審查（v3） | ✅ 完成 | 3/3 |
+| 第十六階段 | 基礎設施強化 | 📌 待開始 | 0/4 |
+| 第十七階段 | Slack 適配器 | 📌 待開始 | 0/4 |
+| 第十八階段 | Microsoft Teams 適配器 | 📌 待開始 | 0/4 |
+| 第十九階段 | Google Chat 適配器 | 📌 待開始 | 0/4 |
+| 第二十階段 | 多租戶與進階功能 | 📌 待開始 | 0/5 |
 
 ---
 
@@ -138,16 +143,76 @@
 
 ---
 
-## 後續擴充（待規劃）
+## 第十五階段：程式碼審查（v3）
 
-- [ ] **E.1** Microsoft Teams 適配器
-- [ ] **E.2** Google Chat 適配器
-- [ ] **E.3** Slack 適配器
-- [ ] **E.4** Redis / 資料庫持久化 Session Store
-- [ ] **E.5** 多租戶支援
-- [ ] **E.6** 訊息佇列（RabbitMQ / Kafka）
-- [ ] **E.7** 健康檢查與監控端點（OpenTelemetry）
-- [ ] **E.8** Rate Limiting
+- [x] **15.1** [High] MediaHostingService TOCTOU 競態條件修復 — 容量檢查與新增操作加入 `lock` 確保原子性，防止並行請求超出暫存上限
+- [x] **15.2** [Medium] AiResponseParser ReDoS 防護補全 — 將 inline `Regex.Replace` 改為預編譯 `ExcessNewlinesRegex` 並加入 1 秒逾時，與類別中其他 Regex 一致
+- [x] **15.3** [Low] CopilotClientService 啟動執行緒安全 — `StartAsync` 加入 `SemaphoreSlim` 防止並行呼叫建立多個 `CopilotClient`
+
+---
+
+## 第十六階段：基礎設施強化
+
+> 建議優先實作：為後續新增平台與多租戶功能打下穩固基礎。
+
+- [ ] **16.1** 健康檢查與監控端點（OpenTelemetry）
+  - 整合 `OpenTelemetry.Extensions.Hosting`、`OpenTelemetry.Instrumentation.AspNetCore`
+  - 新增 `/health` 結構化健康檢查（檢查 Copilot CLI 連線狀態、各 IM 平台 API 可用性）
+  - 新增 `/metrics` Prometheus 端點（請求數、回應延遲、Session 數量、多媒體暫存使用量）
+  - 分散式追蹤（Trace ID 貫穿 Webhook → MessageRouter → Copilot SDK）
+- [ ] **16.2** Rate Limiting
+  - 使用 .NET 8 內建 `Microsoft.AspNetCore.RateLimiting`
+  - 按使用者 ID 限流（防止單一使用者濫用）
+  - 按 IM 平台限流（Webhook 端點獨立限流策略）
+  - 429 回應包含 `Retry-After` 標頭
+- [ ] **16.3** Redis / 資料庫持久化 Session Store
+  - 定義 `ISessionStore` 介面（取代 `ConcurrentDictionary` 記憶體快取）
+  - 實作 `RedisSessionStore`（使用 `StackExchange.Redis`）
+  - 實作 `InMemorySessionStore`（保留現有行為作為預設/開發用）
+  - Session 序列化/反序列化（含 CopilotSession 狀態重建）
+  - MediaHostingService 改為 Redis 後端（支援多實例部署）
+- [ ] **16.4** 訊息佇列（RabbitMQ / Kafka）
+  - 定義 `IMessageQueue` 介面
+  - 將 Webhook Controller 的 fire-and-forget `Task.Run` 改為佇列消費模式
+  - 實作 `RabbitMqMessageQueue`（使用 `RabbitMQ.Client`）
+  - 消費者端錯誤重試與死信佇列（DLQ）
+
+## 第十七階段：Slack 適配器
+
+> 相依：第十六階段（建議完成 16.1、16.2 後再開始）
+
+- [ ] **17.1** 安裝 `SlackNet` NuGet 套件，新增 `SlackSettings` 設定類別
+- [ ] **17.2** 實作 `SlackAdapter`（`IImAdapter` 介面）— 使用 Web API 發送訊息，支援 Block Kit 富文字格式
+- [ ] **17.3** 實作 `SlackWebhookController` — Events API 端點、URL Verification 挑戰回應、Request Signing 驗證（HMAC-SHA256）
+- [ ] **17.4** 實作 `SlackMessageConverter` — Slack 事件格式 ↔ `UnifiedMessage` 轉換
+
+## 第十八階段：Microsoft Teams 適配器
+
+> 相依：第十六階段（建議完成 16.1、16.2 後再開始）
+
+- [ ] **18.1** 安裝 `Microsoft.Bot.Builder.Integration.AspNet.Core` NuGet 套件，新增 `TeamsSettings` 設定類別
+- [ ] **18.2** 實作 `TeamsAdapter`（`IImAdapter` 介面）— 透過 Bot Framework SDK 發送訊息，支援 Adaptive Cards
+- [ ] **18.3** 實作 `TeamsWebhookController` — Bot Framework `/api/messages` 端點、JWT Token 驗證
+- [ ] **18.4** 實作 `TeamsMessageConverter` — Bot Framework Activity ↔ `UnifiedMessage` 轉換
+
+## 第十九階段：Google Chat 適配器
+
+> 相依：第十六階段（建議完成 16.1、16.2 後再開始）
+
+- [ ] **19.1** 安裝 `Google.Apis.HangoutsChat.v1` NuGet 套件，新增 `GoogleChatSettings` 設定類別
+- [ ] **19.2** 實作 `GoogleChatAdapter`（`IImAdapter` 介面）— 使用 Google Chat API 發送訊息，支援 Cards V2
+- [ ] **19.3** 實作 `GoogleChatWebhookController` — HTTP 端點、Google Service Account JWT 驗證
+- [ ] **19.4** 實作 `GoogleChatMessageConverter` — Google Chat 事件 ↔ `UnifiedMessage` 轉換
+
+## 第二十階段：多租戶與進階功能
+
+> 相依：第十六階段（需完成 16.3 Redis Session Store）
+
+- [ ] **20.1** 多租戶資料模型 — 定義 `Tenant` 實體（租戶 ID、API Key、允許的平台清單、Agent 綁定覆寫）
+- [ ] **20.2** 租戶認證中介層 — API Key 驗證、租戶隔離（Session Key 加入租戶 ID 前綴）
+- [ ] **20.3** 租戶管理 API — CRUD 端點（`/api/admin/tenants`），含 API Key 輪換
+- [ ] **20.4** 動態平台配置 — 每個租戶可獨立設定 IM 平台 Token 與 Agent 綁定，無需重啟服務
+- [ ] **20.5** 使用量統計與計費基礎 — 按租戶記錄訊息數、API 呼叫數、多媒體流量
 
 ---
 
@@ -184,6 +249,7 @@
 | 10.1-10.3 Docker | `Dockerfile`, `docker-compose.yml`, `.dockerignore` |
 | 11.1 文件 | `README.md`, `Tasks.md` |
 | 11.2 測試 | `tests/AiImConnector.Tests/` |
+| — Copilot 開發指引 | `.github/copilot-instructions.md` |
 
 ---
 
@@ -191,6 +257,7 @@
 
 | 日期 | 說明 |
 |------|------|
+| 2026-03-24 | **v0.2.5**：程式碼審查（v3）— 修復 3 項問題（MediaHostingService TOCTOU 競態條件、AiResponseParser ReDoS 防護補全、CopilotClientService 啟動執行緒安全）、新增 `.github/copilot-instructions.md`、演進計畫（第十六～二十階段）、47 個測試全通過 |
 | 2026-02-24 | **v0.2.4**：程式碼審查與安全性掃描（v2）— 修復 4 項程式碼品質問題（Session 資源洩漏、System Prompt 競態條件、SemaphoreSlim 累積、重建後重複注入）與 12 項安全漏洞（Telegram 驗證強化、多媒體大小限制、暫存容量上限、加密隨機 ID、ReDoS 防護、錯誤訊息遮蔽、請求大小限制、Caddy 安全標頭、.env.example 清理）、47 個測試全通過 |
 | 2026-02-13 | **v0.2.3**：修復 Base64 FormatException — 清理 base64 資料中的空白字元 |
 | 2026-02-12 | **v0.2.2**：多媒體傳送改為臨時 URL 文字連結 — 不再依賴 IM 平台原生多媒體推送 API，改將暫存 URL 附加於文字回應 |
