@@ -26,9 +26,9 @@ AI 生成的圖片會自動解析並直接傳送至 IM 平台，使用者無需�
 
 ```
 ┌─────────────┐                ┌──────────────────────────────────────┐                ┌─────────────────┐
-│             │    Webhook     │          AI IM Connector              │   ACP (stdio)  │                 │
+│             │    Webhook     │          AI IM Connector              │  ACP (HTTP/stdio)│                 │
 │   LINE      │───────────────▶│                                      │───────────────▶│  Copilot CLI    │
-│   Telegram  │◀───────────────│   .NET 8 WebAPI                      │◀───────────────│  (子行程)       │
+│   Telegram  │◀───────────────│   .NET 8 WebAPI                      │◀───────────────│  (遠端 / 子行程)│
 │   (其他 IM) │  Reply/Push API│                                      │ Copilot SDK    │                 │
 │             │  ＋多媒體傳送  │  ┌────────────┐  ┌──────────────┐    │                └─────────────────┘
 └─────────────┘                │  │MessageRouter│  │ SessionMgr   │    │
@@ -101,15 +101,69 @@ dotnet user-secrets set "Im:Telegram:BotToken" "YOUR_TELEGRAM_BOT_TOKEN"
 # 4. 設定 GitHub Token（Copilot SDK 需要）
 export GITHUB_TOKEN="your_github_token"
 
-# 5. 啟動服務
+# 5. 啟動遠端 ACP Server（在另一個終端視窗執行）
+copilot.cmd --acp --headless --port 10080
+
+# 6. 啟動服務
 dotnet run
 
-# 6. 驗證服務狀態
+# 7. 驗證服務狀態
 curl http://localhost:5000/health
 ```
 
 > 💡 **提示**：開發階段可使用 [ngrok](https://ngrok.com/) 建立 HTTPS 公開 URL，
 > 供 LINE 與 Telegram 的 Webhook 回呼使用。
+
+### ACP Server 啟動方式
+
+本服務透過 ACP（Agent Client Protocol）與 Copilot CLI 通訊。支援兩種模式：
+
+#### 模式一：遠端 ACP Server（推薦用於生產環境）
+
+在主機上啟動 Copilot CLI 作為獨立的 ACP Server：
+
+```bash
+# 基本啟動（監聽 port 10080）
+copilot.cmd --acp --headless --port 10080
+
+# macOS / Linux
+copilot --acp --headless --port 10080
+```
+
+服務端設定 `Acp:CliUrl` 指向 ACP Server 位址：
+
+```json
+{
+  "Acp": {
+    "CliUrl": "localhost:10080",
+    "ResponseTimeoutSeconds": 120
+  }
+}
+```
+
+Docker 容器內透過 `host.docker.internal` 連回宿主機：
+
+```bash
+# docker/.env
+ACP_CLI_URL=host.docker.internal:10080
+```
+
+#### 模式二：SDK 自動啟動（適用於開發環境）
+
+將 `Acp:CliUrl` 留空，SDK 會自動下載並啟動 Copilot CLI 子行程（stdio 模式）：
+
+```json
+{
+  "Acp": {
+    "CliUrl": "",
+    "CliPath": "",
+    "ResponseTimeoutSeconds": 120
+  }
+}
+```
+
+> ⚠️ SDK 自動模式下，Copilot CLI 的生命週期由應用程式管理；
+> 遠端模式下，ACP Server 獨立運行，應用程式重啟不影響 CLI。
 
 ### 執行測試
 
@@ -165,6 +219,7 @@ docker compose down
     }
   },
   "Acp": {
+    "CliUrl": "localhost:10080",
     "CliPath": "",
     "ResponseTimeoutSeconds": 120
   },
@@ -195,7 +250,8 @@ docker compose down
 | `Im:Line` | `ChannelSecret` | LINE Webhook 簽名驗證用的 Channel Secret | — |
 | `Im:Telegram` | `BotToken` | Telegram Bot API Token | — |
 | `Im:Telegram` | `SecretToken` | Telegram Webhook 驗證用的 Secret Token（**必須設定**，未設定時拒絕所有請求） | — |
-| `Acp` | `CliPath` | Copilot CLI 執行檔路徑（留空則由 SDK 自動下載） | `""` |
+| `Acp` | `CliUrl` | 遠端 ACP Server 位址（例如 `localhost:10080`），留空則由 SDK 自動啟動 CLI | `"localhost:10080"` |
+| `Acp` | `CliPath` | Copilot CLI 執行檔路徑（僅 `CliUrl` 留空時使用，留空則由 SDK 自動下載） | `""` |
 | `Acp` | `ResponseTimeoutSeconds` | AI 回應的全域逾時秒數（建議 Docker 部署設為 `600`） | `120` |
 | `Connector` | `PublicBaseUrl` | 連接器公開 URL（供 Base64 多媒體暫存服務使用，例如 `https://yourdomain.com`） | `""` |
 | `AgentBindings:Bindings:{平台}` | `AgentName` | Agent 名稱（識別用） | — |
@@ -214,6 +270,7 @@ Im__Line__ChannelSecret=your_secret
 Im__Telegram__BotToken=your_bot_token
 
 # Copilot SDK 設定
+Acp__CliUrl=localhost:10080
 Acp__CliPath=/path/to/copilot-cli
 Acp__ResponseTimeoutSeconds=120
 
