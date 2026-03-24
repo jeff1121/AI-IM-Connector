@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using AiImConnector.Configuration;
 using AiImConnector.Models;
@@ -9,13 +8,13 @@ using Microsoft.Extensions.Options;
 namespace AiImConnector.Services.Media;
 
 /// <summary>
-/// 多媒體暫存服務 — 將 Base64 多媒體資料暫存在記憶體中，並提供公開 URL 供 IM 平台存取。
-/// 每筆暫存資料在 10 分鐘後自動過期，由背景 Timer 定期清理。
-/// 設有最大暫存數量（1000 筆）與總容量上限（500 MB），防止記憶體耗盡。
+/// 多媒體暫存服務 — 將 Base64 多媒體資料暫存並提供公開 URL 供 IM 平台存取。
+/// 底層儲存透過 IMediaStore 抽象化（記憶體 / Redis），支援水平擴展。
+/// 設有最大暫存數量（1000 筆）與總容量上限（500 MB），防止資源耗盡。
 /// </summary>
 public class MediaHostingService : IDisposable
 {
-    private readonly ConcurrentDictionary<string, HostedMedia> _store = new();
+    private readonly IMediaStore _store;
     private readonly string _publicBaseUrl;
     private readonly ConnectorMetrics _metrics;
     private readonly ILogger<MediaHostingService> _logger;
@@ -27,15 +26,18 @@ public class MediaHostingService : IDisposable
     private const int MaxEntries = 1000;
     /// <summary>總容量上限（500 MB）</summary>
     private const long MaxTotalBytes = 500 * 1024 * 1024;
-    /// <summary>目前暫存總大小（bytes）</summary>
-    private long _totalBytes;
 
-    public MediaHostingService(IOptions<ConnectorSettings> settings, ConnectorMetrics metrics, ILogger<MediaHostingService> logger)
+    public MediaHostingService(
+        IMediaStore store,
+        IOptions<ConnectorSettings> settings,
+        ConnectorMetrics metrics,
+        ILogger<MediaHostingService> logger)
     {
+        _store = store;
         _publicBaseUrl = (settings.Value.PublicBaseUrl ?? "").TrimEnd('/');
         _metrics = metrics;
         _logger = logger;
-        _cleanupTimer = new Timer(_ => CleanupExpired(), null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        _cleanupTimer = new Timer(_ => _ = CleanupExpiredAsync(), null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
         if (string.IsNullOrEmpty(_publicBaseUrl))
         {
@@ -44,7 +46,7 @@ public class MediaHostingService : IDisposable
     }
 
     /// <summary>暫存 Base64 多媒體並回傳公開 URL（含數量與容量上限檢查）</summary>
-    public string? HostMedia(MediaContent media)
+    public async Task<string?> HostMediaAsync(MediaContent media)
     {
         if (string.IsNullOrEmpty(media.Base64Data))
             return null;
@@ -70,12 +72,15 @@ public class MediaHostingService : IDisposable
         string id;
         lock (_capacityLock)
         {
-            if (_store.Count >= MaxEntries)
+            var currentCount = _store.GetCountAsync().GetAwaiter().GetResult();
+            var currentBytes = _store.GetTotalBytesAsync().GetAwaiter().GetResult();
+
+            if (currentCount >= MaxEntries)
             {
                 _logger.LogWarning("多媒體暫存已達上限（{MaxEntries} 筆），拒絕新增", MaxEntries);
                 return null;
             }
-            if (Interlocked.Read(ref _totalBytes) + data.Length > MaxTotalBytes)
+            if (currentBytes + data.Length > MaxTotalBytes)
             {
                 _logger.LogWarning("多媒體暫存總容量已達上限（{MaxTotalBytes} bytes），拒絕新增", MaxTotalBytes);
                 return null;
@@ -85,58 +90,46 @@ public class MediaHostingService : IDisposable
             var idBytes = RandomNumberGenerator.GetBytes(16);
             id = Convert.ToHexString(idBytes).ToLowerInvariant();
 
-            _store[id] = new HostedMedia
+            var hostedMedia = new HostedMedia
             {
                 Data = data,
                 MimeType = media.MimeType,
                 FileName = media.FileName,
                 ExpiresAt = DateTimeOffset.UtcNow.Add(_mediaTtl)
             };
-            Interlocked.Add(ref _totalBytes, data.Length);
+
+            _store.StoreAsync(id, hostedMedia).GetAwaiter().GetResult();
         }
 
         var url = $"{_publicBaseUrl}/api/media/{id}";
         _metrics.RecordMediaHosted();
-        _logger.LogDebug("暫存多媒體 {Id}，過期時間：{ExpiresAt}，URL：{Url}", id, _store[id].ExpiresAt, url);
+        _logger.LogDebug("暫存多媒體 {Id}，過期時間：{ExpiresAt}，URL：{Url}", id, DateTimeOffset.UtcNow.Add(_mediaTtl), url);
         return url;
     }
 
+    /// <summary>同步版本 — 維持向後相容（內部委派至非同步方法）</summary>
+    public string? HostMedia(MediaContent media) => HostMediaAsync(media).GetAwaiter().GetResult();
+
     /// <summary>取得暫存的多媒體資料</summary>
-    public HostedMedia? GetMedia(string id)
-    {
-        if (_store.TryGetValue(id, out var media))
-        {
-            if (media.ExpiresAt > DateTimeOffset.UtcNow) return media;
-            _store.TryRemove(id, out _);
-        }
-        return null;
-    }
+    public async Task<HostedMedia?> GetMediaAsync(string id) => await _store.GetAsync(id);
+
+    /// <summary>同步版本 — 維持向後相容</summary>
+    public HostedMedia? GetMedia(string id) => _store.GetAsync(id).GetAwaiter().GetResult();
 
     /// <summary>取得暫存服務統計資訊</summary>
     public MediaHostingStats GetStats() => new()
     {
-        EntryCount = _store.Count,
-        TotalBytes = Interlocked.Read(ref _totalBytes),
+        EntryCount = _store.GetCountAsync().GetAwaiter().GetResult(),
+        TotalBytes = _store.GetTotalBytesAsync().GetAwaiter().GetResult(),
         MaxEntries = MaxEntries,
         MaxTotalBytes = MaxTotalBytes
     };
 
-    private void CleanupExpired()
+    private async Task CleanupExpiredAsync()
     {
-        var count = 0;
-        long freedBytes = 0;
-        var now = DateTimeOffset.UtcNow;
-        foreach (var kvp in _store)
-        {
-            if (kvp.Value.ExpiresAt <= now && _store.TryRemove(kvp.Key, out var removed))
-            {
-                freedBytes += removed.Data.Length;
-                count++;
-            }
-        }
+        var (count, freedBytes) = await _store.CleanupExpiredAsync();
         if (count > 0)
         {
-            Interlocked.Add(ref _totalBytes, -freedBytes);
             _metrics.RecordMediaExpired(count);
             _logger.LogDebug("已清理 {Count} 筆過期暫存多媒體，釋放 {Bytes} bytes", count, freedBytes);
         }

@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using StackExchange.Redis;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +29,19 @@ builder.Services.Configure<AgentBindingSettings>(builder.Configuration.GetSectio
 builder.Services.AddSingleton<ICopilotClientService, CopilotClientService>();
 builder.Services.AddSingleton<CopilotSessionManager>();
 builder.Services.AddHttpClient<IMediaHandler, MediaHandler>();
+
+// === 多媒體暫存儲存（Redis / 記憶體自動切換） ===
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrEmpty(redisConnectionString))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+        ConnectionMultiplexer.Connect(redisConnectionString));
+    builder.Services.AddSingleton<IMediaStore, RedisMediaStore>();
+}
+else
+{
+    builder.Services.AddSingleton<IMediaStore, InMemoryMediaStore>();
+}
 builder.Services.AddSingleton<MediaHostingService>();
 builder.Services.AddSingleton<MessageRouter>();
 
