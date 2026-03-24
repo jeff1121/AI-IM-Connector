@@ -1,3 +1,4 @@
+using AiImConnector.Adapters;
 using AiImConnector.Adapters.Line;
 using AiImConnector.Adapters.Telegram;
 using AiImConnector.Configuration;
@@ -6,6 +7,7 @@ using AiImConnector.Middleware;
 using AiImConnector.Services;
 using AiImConnector.Services.Acp;
 using AiImConnector.Services.Media;
+using AiImConnector.Services.Queue;
 using AiImConnector.Telemetry;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -45,9 +47,16 @@ else
 builder.Services.AddSingleton<MediaHostingService>();
 builder.Services.AddSingleton<MessageRouter>();
 
-// === IM 適配器註冊 ===
+// === 訊息佇列（取代 Task.Run fire-and-forget） ===
+builder.Services.AddSingleton<IMessageQueue, InMemoryMessageQueue>();
+builder.Services.AddHostedService<MessageQueueWorker>();
+
+// === IM 適配器註冊（同時以具體類別與 IImAdapter 介面註冊，供訊息佇列處理器解析） ===
 builder.Services.AddHttpClient<LineAdapter>();
 builder.Services.AddSingleton<TelegramAdapter>();
+// LineAdapter 由 HttpClientFactory 管理（Transient），透過 Factory 加入 IImAdapter 集合
+builder.Services.AddTransient<IImAdapter>(sp => sp.GetRequiredService<LineAdapter>());
+builder.Services.AddSingleton<IImAdapter>(sp => sp.GetRequiredService<TelegramAdapter>());
 
 // === ASP.NET Core 服務 ===
 builder.Services.AddControllers();

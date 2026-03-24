@@ -1,8 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using AiImConnector.Configuration;
-using AiImConnector.Services;
+using AiImConnector.Services.Queue;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -13,6 +12,7 @@ namespace AiImConnector.Adapters.Telegram;
 /// <summary>
 /// Telegram Webhook 控制器 — 接收 Telegram Bot 的 Webhook 更新。
 /// 支援 Secret Token 驗證（常數時間比較），未設定時拒絕所有請求（fail-closed）。
+/// 驗證通過後將訊息加入佇列，由背景工作執行緒處理。
 /// </summary>
 [ApiController]
 [Route("api/webhook/telegram")]
@@ -20,18 +20,18 @@ namespace AiImConnector.Adapters.Telegram;
 public class TelegramWebhookController : ControllerBase
 {
     private readonly TelegramAdapter _telegramAdapter;
-    private readonly MessageRouter _messageRouter;
+    private readonly IMessageQueue _messageQueue;
     private readonly TelegramSettings _settings;
     private readonly ILogger<TelegramWebhookController> _logger;
 
     public TelegramWebhookController(
         TelegramAdapter telegramAdapter,
-        MessageRouter messageRouter,
+        IMessageQueue messageQueue,
         IOptions<TelegramSettings> settings,
         ILogger<TelegramWebhookController> logger)
     {
         _telegramAdapter = telegramAdapter;
-        _messageRouter = messageRouter;
+        _messageQueue = messageQueue;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -79,30 +79,8 @@ public class TelegramWebhookController : ControllerBase
             }
         }
 
-        // 非同步處理訊息
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var response = await _messageRouter.RouteMessageAsync(message);
-
-                // 發送文字回應
-                if (!string.IsNullOrEmpty(response.Text))
-                {
-                    await _telegramAdapter.ReplyTextAsync(message, response.Text);
-                }
-
-                // 發送多媒體回應
-                foreach (var media in response.MediaContents)
-                {
-                    await _telegramAdapter.ReplyMediaAsync(message, media);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "處理 Telegram 訊息失敗：{UserId}", message.UserId);
-            }
-        });
+        // 加入訊息佇列（由背景工作執行緒處理）
+        await _messageQueue.EnqueueAsync(new QueuedMessage(message, "Telegram"));
 
         return Ok();
     }
