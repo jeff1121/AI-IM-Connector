@@ -4,6 +4,7 @@ using System.Text.Json;
 using AiImConnector.Configuration;
 using AiImConnector.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Telegram.Bot.Types;
 
@@ -15,6 +16,7 @@ namespace AiImConnector.Adapters.Telegram;
 /// </summary>
 [ApiController]
 [Route("api/webhook/telegram")]
+[EnableRateLimiting("webhook")]
 public class TelegramWebhookController : ControllerBase
 {
     private readonly TelegramAdapter _telegramAdapter;

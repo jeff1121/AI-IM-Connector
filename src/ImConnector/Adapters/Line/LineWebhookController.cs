@@ -4,6 +4,7 @@ using System.Text.Json;
 using AiImConnector.Configuration;
 using AiImConnector.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 namespace AiImConnector.Adapters.Line;
@@ -14,6 +15,7 @@ namespace AiImConnector.Adapters.Line;
 /// </summary>
 [ApiController]
 [Route("api/webhook/line")]
+[EnableRateLimiting("webhook")]
 public class LineWebhookController : ControllerBase
 {
     private readonly LineAdapter _lineAdapter;

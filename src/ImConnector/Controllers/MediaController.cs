@@ -1,5 +1,6 @@
 using AiImConnector.Services.Media;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AiImConnector.Controllers;
 
@@ -9,6 +10,7 @@ namespace AiImConnector.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/media")]
+[EnableRateLimiting("media")]
 public class MediaController : ControllerBase
 {
     private readonly MediaHostingService _hostingService;

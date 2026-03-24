@@ -9,9 +9,11 @@ using AiImConnector.Services.Media;
 using AiImConnector.Telemetry;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +59,58 @@ builder.Services.AddOpenTelemetry()
         .AddMeter(ConnectorMetrics.MeterName)
         .AddPrometheusExporter());
 
+// === Rate Limiting（按 IP + 路徑分區限流） ===
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Webhook 端點 — 每個 IP 每分鐘最多 60 次請求
+    options.AddPolicy("webhook", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0
+            }));
+
+    // 多媒體下載端點 — 每個 IP 每分鐘最多 120 次
+    options.AddPolicy("media", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0
+            }));
+
+    // 全域 fallback — 每個 IP 每分鐘最多 200 次
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 200,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0
+            }));
+
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+        }
+        await Task.CompletedTask;
+    };
+});
+
 // === Copilot CLI 生命週期管理 ===
 builder.Services.AddHostedService<CopilotLifecycleService>();
 
@@ -65,6 +119,7 @@ var app = builder.Build();
 // === 中介層管線 ===
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<WebhookValidationMiddleware>();
+app.UseRateLimiter();
 
 // 靜態檔案（服務條款等頁面）
 app.UseStaticFiles();
